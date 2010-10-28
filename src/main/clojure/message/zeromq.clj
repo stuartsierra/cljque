@@ -28,7 +28,7 @@
   (.socket (context) type))
 
 (defn- register-sockets [poller sockets]
-  (doseq [s sockets] (.register poller s)))
+  (doseq [s sockets] (.register poller s 1))) ; 1 is ZMQ_POLLIN
 
 (defn- poller-for-sockets [sockets]
   (doto (poller (count sockets))
@@ -45,24 +45,9 @@
     (debug "Invoking command" f)
     (f state)))
 
-(defn add-socket-command [constructor handler]
-  (fn [state]
-    (let [{:keys [poller handlers]} state
-	  new-socket (constructor)]
-      {:poller (poller-for-sockets (conj (sockets-from-poller poller) new-socket))
-       :handlers (assoc handlers new-socket handler)})))
-
-(defn add-binding-sub-socket [endpoint handler]
-  (add-socket-command
-   (fn [] (doto (socket ZMQ/SUB)
-	    (.subscribe (byte-array 0))
-	    (.bind endpoint)))
-   (fn [state socket]
-     (handler (.recv socket 0))
-     state)))
-
 (defn- initialize-event-loop [command-queue command-socket]
   {:poller (poller-for-sockets [command-socket])
+   :sockets {::command-socket command-socket}
    :handlers {command-socket (partial handle-command command-queue)}})
 
 (defn- handle-polled [state]
@@ -118,7 +103,7 @@
       (.close))
     nil))
 
-(defn event-loop []
+(defn start-event-loop []
   (let [command-queue (java.util.concurrent.LinkedBlockingQueue.)
 	command-endpoint (str "inproc://" (unique-id))]
     (info "Starting event loop")
@@ -133,3 +118,44 @@
        (catch Throwable t
 	 (error t))))
     (make-command-fn command-endpoint command-queue)))
+
+(defn make-add-socket-command
+  ([key constructor]
+     (make-add-socket-command key constructor nil))
+  ([key constructor handler]
+     (fn [state]
+       (let [{:keys [poller handlers sockets]} state
+	     new-socket (constructor)]
+	 {:poller (poller-for-sockets (conj (sockets-from-poller poller) new-socket))
+	  :sockets (assoc sockets key new-socket)
+	  :handlers (assoc handlers new-socket handler)}))))
+
+(defn make-add-listener-command [key constructor handler]
+  (make-add-socket-command
+   key
+   constructor
+   (fn [state socket]
+     (handler (.recv socket 0))
+     state)))
+
+(defn make-send-command [key message]
+  (fn [state]
+    (let [socket (get (:sockets state) key)]
+      (.send socket message 0))
+    state))
+
+(defn make-close-socket-command [key]
+  (fn [state]
+    (let [{:keys [poller handlers sockets]} state
+	  socket (get sockets key)]
+      (.close socket)
+      {:poller (poller-for-sockets (remove #{socket} (sockets-from-poller poller)))
+       :sockets (dissoc sockets key)
+       :handlers (dissoc handlers socket)})))
+
+(defn make-shutdown-command []
+  (fn [state]
+    (let [{:keys [sockets]} state]
+      (doseq [socket (vals sockets)]
+	(.close socket)))))
+
