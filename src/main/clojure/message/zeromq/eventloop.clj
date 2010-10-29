@@ -1,4 +1,4 @@
-(ns message.zeromq
+(ns message.zeromq.eventloop
   (:use [clojure.contrib.logging :only (error warn info debug)])
   (:import (org.zeromq ZMQ ZMQ$Socket ZMQ$Context ZMQ$Poller)
 	   (java.util.concurrent LinkedBlockingQueue)))
