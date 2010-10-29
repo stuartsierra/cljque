@@ -42,3 +42,37 @@ Step 4: Run a REPL:
 Or SWANK:
 
     mvn clojure:swank
+
+
+
+Using the Library
+========================================
+
+Message defines a simple API for sending messages and listening for
+messages.  The core functions are defined by protocols in
+`message.api`.
+
+The `listen` function starts listening for messages received by some
+Listener object.
+
+    (listen listener-target receiver-fn)
+
+The listener-target may be any object implementing the `Listener`
+protocol.  When listener-target receives a message, it invokes the
+given receiver-fn with the message as its argument.
+
+To send a message, use the `send-message` function:
+
+    (send-message target message)
+
+The target may be any object implementing the `MessageTarget`
+protocol.
+
+To stop listening for messages on a given target, use the `stop`
+function:
+
+    (stop listener-target)
+
+Different implementations provide access to different messaging
+systems.  `message.local` does in-process messaging between threads.
+`message.zeromq` does messaging using ZeroMQ sockets.
