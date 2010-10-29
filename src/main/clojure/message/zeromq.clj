@@ -54,22 +54,16 @@
   (let [{:keys [poller handlers]} state]
     (reduce (fn [state i]
 	      (debug "Checking for events on poller socket" i)
-	      (cond (.pollin poller i)
-		    (do (debug "pollin on poller socket" i)
-			(let [socket (.getSocket poller i)
-			      handler (get handlers socket)]
-			  (if handler
-			    (do (debug "Invoking handler" handler)
-				(handler state socket))
-			    (do (warn "No handler for socket" socket)
-				state))))
-		    (.pollout poller i)
-  		    (do (debug "pollout on poller socket" i)
-			state)
-		    (.pollerr poller i)
-		    (do (debug "pollerr on poller socket" i)
-			state)
-		    :else state))
+	      (if (.pollin poller i)
+		(do (debug "pollin on poller socket" i)
+		    (let [socket (.getSocket poller i)
+			  handler (get handlers socket)]
+		      (if handler
+			(do (debug "Invoking handler" handler)
+			    (handler state socket))
+			(do (warn "No handler for socket" socket)
+			    state))))
+		state))
 	    state (range (.getSize poller)))))
 
 (defn- event-loop-body
@@ -103,7 +97,12 @@
       (.close))
     nil))
 
-(defn start-event-loop []
+(defn start-event-loop
+  "Starts an event loop in another thread for processing messages to
+  and from ZeroMQ sockets. Returns a function (fn [f] ...) that causes
+  function f to be invoked in the event loop thread with the current
+  state of the event loop as its argument."
+  []
   (let [command-queue (java.util.concurrent.LinkedBlockingQueue.)
 	command-endpoint (str "inproc://" (unique-id))]
     (info "Starting event loop")
@@ -120,40 +119,70 @@
     (make-command-fn command-endpoint command-queue)))
 
 (defn make-add-socket-command
-  ([key constructor]
-     (make-add-socket-command key constructor nil))
-  ([key constructor handler]
-     (fn [state]
-       (let [{:keys [poller handlers sockets]} state
-	     new-socket (constructor)]
-	 {:poller (poller-for-sockets (conj (sockets-from-poller poller) new-socket))
-	  :sockets (assoc sockets key new-socket)
-	  :handlers (assoc handlers new-socket handler)}))))
+  "Returns a command function that runs the no-arg function
+  constructor on the event loop thread. constructor must open and
+  return a ZeroMQ socket, which will be asociated with key."
+  [key constructor]
+  (fn [state]
+    (let [{:keys [poller handlers sockets]} state
+	  new-socket (constructor)]
+      (update-in state [:sockets] assoc key new-socket))))
 
-(defn make-add-listener-command [key constructor handler]
-  (make-add-socket-command
+(defn make-add-polled-socket-command
+  "Like make-add-socket-command, but additionally the socket will be
+  polled for incoming events. When an event arrives, the handler
+  function will be invoked with two arguments: the state of the event
+  loop and the socket which triggered the event. The handler function
+  must receive the message from the socket and return the (possibly
+  modified) state of the event loop."
+  [key constructor event-handler]
+  (fn [state]
+    (let [{:keys [poller handlers sockets]} state
+	  new-socket (constructor)]
+      {:poller (poller-for-sockets (conj (sockets-from-poller poller) new-socket))
+       :sockets (assoc sockets key new-socket)
+       :handlers (assoc handlers new-socket event-handler)})))
+
+(defn make-add-listener-command
+  "Returns a command function based on make-add-socket-command, but
+  provides a default event-handler that receives the message from the
+  socket and calls message-handler on it. The return value of
+  message-handler is ignored."
+  [key constructor message-handler]
+  (make-add-polled-socket-command
    key
    constructor
    (fn [state socket]
-     (handler (.recv socket 0))
+     (message-handler (.recv socket 0))
      state)))
 
-(defn make-send-command [key message]
+(defn make-send-command
+  "Returns a command function that sends message (a byte array) to the
+  socket associated with key."
+  [key message]
   (fn [state]
-    (let [socket (get (:sockets state) key)]
-      (.send socket message 0))
+    (if-let [socket (get (:sockets state) key)]
+      (do (debug "Sending message to socket" key ":" (String. message))
+	  (.send socket message 0))
+      (warn "No socket associated with" key))
     state))
 
-(defn make-close-socket-command [key]
+(defn make-close-socket-command
+  "Returns a command function that closes the socket associated with key."
+  [key]
   (fn [state]
     (let [{:keys [poller handlers sockets]} state
 	  socket (get sockets key)]
+      (debug "Closing socket associated with" key)
       (.close socket)
       {:poller (poller-for-sockets (remove #{socket} (sockets-from-poller poller)))
        :sockets (dissoc sockets key)
        :handlers (dissoc handlers socket)})))
 
-(defn make-shutdown-command []
+(defn make-shutdown-command
+  "Returns a command function that closes all sockets and terminates
+  the event loop."
+  []
   (fn [state]
     (let [{:keys [sockets]} state]
       (doseq [socket (vals sockets)]
