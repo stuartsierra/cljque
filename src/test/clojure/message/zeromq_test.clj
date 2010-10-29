@@ -21,4 +21,5 @@
       (Thread/sleep 1000)
       (expect (= (vec (range size)) @log))
       (stop (zmq-tcp-sub-socket :bind "*" port))
-      (stop (zmq-tcp-pub-socket :connect "127.0.0.1" port)))))
+      (stop (zmq-tcp-pub-socket :connect "127.0.0.1" port))
+      (stop-zmq))))
