@@ -4,7 +4,7 @@
 
 (def ^{:private true} zmq-context (atom nil))
 
-(defn context
+(defn ^ZMQ$Context context
   "Returns a singleton ZMQ$Context, creating it if necessary."
   []
   (or @zmq-context
@@ -22,7 +22,7 @@
   [size]
   (.poller (context) size))
 
-(defn socket
+(defn ^ZMQ$Socket socket
   "Creates a ZMQ$Socket of the given type."
   [type]
   (.socket (context) type))
