@@ -11,7 +11,7 @@
   (given [port (rand-int-in-range 11000 20000)
 	  log (atom [])
 	  listener (fn [msg] (swap! log conj (Integer/parseInt (String. msg))))
-	  size 50]
+	  size 50] ; this fails over 85, why?
     (do-it (str "can send/receive" size "messages")
       (listen (zmq-tcp-sub-socket :bind "*" port) listener)
       (Thread/sleep 500)
