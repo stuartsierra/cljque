@@ -115,7 +115,9 @@
   state of the event loop as its argument."
   []
   (let [command-queue (LinkedBlockingQueue.)
-	command-endpoint (str "inproc://" (unique-id))]
+	command-endpoint (str "inproc://" (unique-id))
+	command-promise (promise)
+	command-fn (make-command-fn command-endpoint command-queue)]
     (info "Starting event loop")
     (info "Command endpoint is" command-endpoint)
     (future
@@ -123,11 +125,12 @@
        (let [command-socket (doto (socket ZMQ/SUB)
 			      (.subscribe (byte-array 0))
 			      (.bind command-endpoint))]
+	 (deliver command-promise command-fn)
 	 (event-loop-body
 	  (initialize-event-loop command-queue command-socket)))
        (catch Throwable t
 	 (error t "Event loop body threw"))))
-    (make-command-fn command-endpoint command-queue)))
+    command-promise))
 
 (defn make-add-socket-command
   "Returns a command function that runs the no-arg function
@@ -138,6 +141,14 @@
     (let [{:keys [poller handlers sockets]} state
 	  new-socket (constructor)]
       (update-in state [:sockets] assoc key new-socket))))
+
+(defn make-ensure-socket-command
+  [key constructor]
+  (fn [state]
+    (let [{:keys [poller handlers sockets]} state]
+      (if (contains? sockets key)
+	state
+	((make-add-socket-command key constructor) state)))))
 
 (defn make-add-polled-socket-command
   "Like make-add-socket-command, but additionally the socket will be
