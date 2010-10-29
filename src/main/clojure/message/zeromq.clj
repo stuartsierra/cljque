@@ -1,6 +1,7 @@
 (ns message.zeromq
   (:use [clojure.contrib.logging :only (error warn info debug)])
-  (:import (org.zeromq ZMQ ZMQ$Socket ZMQ$Context ZMQ$Poller)))
+  (:import (org.zeromq ZMQ ZMQ$Socket ZMQ$Context ZMQ$Poller)
+	   (java.util.concurrent LinkedBlockingQueue)))
 
 (def ^{:private true} zmq-context (atom nil))
 
@@ -15,9 +16,9 @@
   "Terminates the singleton ZMQ$Context if it exists."
   []
   (swap! zmq-context
-	 (fn [state] (when state (.term state)))))
+	 (fn [^ZMQ$Context state] (when state (.term state)))))
 
-(defn poller
+(defn ^ZMQ$Poller poller
   "Creates a ZMQ$Poller of the given size"
   [size]
   (.poller (context) size))
@@ -27,7 +28,7 @@
   [type]
   (.socket (context) type))
 
-(defn- register-sockets [poller sockets]
+(defn- register-sockets [^ZMQ$Poller poller sockets]
   (doseq [s sockets] (.register poller s 1))) ; 1 is ZMQ_POLLIN
 
 (defn- poller-for-sockets [sockets]
@@ -35,23 +36,30 @@
     (.setTimeout -1)
     (register-sockets sockets)))
 
-(defn- sockets-from-poller [poller]
+(defn- sockets-from-poller [^ZMQ$Poller poller]
   (doall (map #(.getSocket poller %) (range (.getSize poller)))))
 
-(defn- handle-command [command-queue state socket]
+(defn- handle-command [^LinkedBlockingQueue command-queue
+		       state
+		       ^ZMQ$Socket socket]
   (debug "Received command signal")
   (.recv socket 0)
   (let [f (.take command-queue)]
     (debug "Invoking command" f)
-    (f state)))
+    (try (f state)
+	 (catch Throwable t
+	   (error t "Command threw")
+	   state))))
+
+(defrecord EventLoopState [^ZMQ$Poller poller sockets handlers])
 
 (defn- initialize-event-loop [command-queue command-socket]
-  {:poller (poller-for-sockets [command-socket])
-   :sockets {::command-socket command-socket}
-   :handlers {command-socket (partial handle-command command-queue)}})
+  (EventLoopState. (poller-for-sockets [command-socket])
+		   {::command-socket command-socket}
+		   {command-socket (partial handle-command command-queue)}))
 
 (defn- handle-polled [state]
-  (let [{:keys [poller handlers]} state]
+  (let [{:keys [^ZMQ$Poller poller handlers]} state]
     (reduce (fn [state i]
 	      (debug "Checking for events on poller socket" i)
 	      (if (.pollin poller i)
@@ -60,7 +68,9 @@
 			  handler (get handlers socket)]
 		      (if handler
 			(do (debug "Invoking handler" handler)
-			    (handler state socket))
+			    (try (handler state socket)
+				 (catch Throwable t
+				   (error t "Handler threw"))))
 			(do (warn "No handler for socket" socket)
 			    state))))
 		state))
@@ -70,24 +80,25 @@
   "Executes the body of the event loop, given the initial state."
   [initial-state]
   (loop [state initial-state]
-    (debug "Polling with timeout" (.getTimeout (:poller state)))
-    (let [i (.poll (:poller state))]
-      (debug "Poller signalled" i "events")
-      (when (neg? i)
-	(throw (Exception. "Poller failed"))))
-    (let [state' (handle-polled state)]
-      (when (not= state state')
-	(debug "Event loop state changed to" state'))
-      (if state'
-	(recur state')
-	(info "Event loop stopped.")))))
+    (let [^ZMQ$Poller poller (:poller state)]
+      (debug "Polling with timeout" (.getTimeout poller))
+      (let [i (.poll poller)]
+	(debug "Poller signalled" i "events")
+	(when (neg? i)
+	  (throw (Exception. "Poller failed"))))
+      (let [state' (handle-polled state)]
+	(when (not= state state')
+	  (debug "Event loop state changed to" state'))
+	(if state'
+	  (recur state')
+	  (info "Event loop stopped."))))))
 
 (defn- unique-id []
   (str (java.util.UUID/randomUUID)))
 
 (defn- make-command-fn
   "Returns the function that sends commands to the event loop."
-  [command-endpoint command-queue]
+  [command-endpoint ^LinkedBlockingQueue command-queue]
   (fn [f]
     (debug "Sending command" f)
     (.put command-queue f)
@@ -103,7 +114,7 @@
   function f to be invoked in the event loop thread with the current
   state of the event loop as its argument."
   []
-  (let [command-queue (java.util.concurrent.LinkedBlockingQueue.)
+  (let [command-queue (LinkedBlockingQueue.)
 	command-endpoint (str "inproc://" (unique-id))]
     (info "Starting event loop")
     (info "Command endpoint is" command-endpoint)
@@ -115,7 +126,7 @@
 	 (event-loop-body
 	  (initialize-event-loop command-queue command-socket)))
        (catch Throwable t
-	 (error t))))
+	 (error t "Event loop body threw"))))
     (make-command-fn command-endpoint command-queue)))
 
 (defn make-add-socket-command
@@ -139,9 +150,10 @@
   (fn [state]
     (let [{:keys [poller handlers sockets]} state
 	  new-socket (constructor)]
-      {:poller (poller-for-sockets (conj (sockets-from-poller poller) new-socket))
-       :sockets (assoc sockets key new-socket)
-       :handlers (assoc handlers new-socket event-handler)})))
+      (EventLoopState. (poller-for-sockets (conj (sockets-from-poller poller)
+						 new-socket))
+		       (assoc sockets key new-socket)
+		       (assoc handlers new-socket event-handler)))))
 
 (defn make-add-listener-command
   "Returns a command function based on make-add-socket-command, but
@@ -152,16 +164,19 @@
   (make-add-polled-socket-command
    key
    constructor
-   (fn [state socket]
-     (message-handler (.recv socket 0))
+   (fn [state ^ZMQ$Socket socket]
+     (try (message-handler (.recv socket 0))
+	  (catch Throwable t
+	    (error t "Message handler threw")
+	    state))
      state)))
 
 (defn make-send-command
   "Returns a command function that sends message (a byte array) to the
   socket associated with key."
-  [key message]
+  [key ^bytes message]
   (fn [state]
-    (if-let [socket (get (:sockets state) key)]
+    (if-let [^ZMQ$Socket socket (get (:sockets state) key)]
       (do (debug "Sending message to socket" key ":" (String. message))
 	  (.send socket message 0))
       (warn "No socket associated with" key))
@@ -172,12 +187,17 @@
   [key]
   (fn [state]
     (let [{:keys [poller handlers sockets]} state
-	  socket (get sockets key)]
-      (debug "Closing socket associated with" key)
-      (.close socket)
-      {:poller (poller-for-sockets (remove #{socket} (sockets-from-poller poller)))
-       :sockets (dissoc sockets key)
-       :handlers (dissoc handlers socket)})))
+	  ^ZMQ$Socket socket (get sockets key)]
+      (if socket
+	(do (debug "Closing socket associated with" key)
+	    (.close socket)
+	    (EventLoopState. (poller-for-sockets
+			      (remove #{socket}
+				      (sockets-from-poller poller)))
+			     (dissoc sockets key)
+			     (dissoc handlers socket)))
+	(do (warn "No socket associated with" key)
+	    state)))))
 
 (defn make-shutdown-command
   "Returns a command function that closes all sockets and terminates
@@ -185,6 +205,6 @@
   []
   (fn [state]
     (let [{:keys [sockets]} state]
-      (doseq [socket (vals sockets)]
+      (doseq [^ZMQ$Socket socket (vals sockets)]
 	(.close socket)))))
 
