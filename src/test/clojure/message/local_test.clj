@@ -8,5 +8,4 @@
   (for [address ((list-of (string-of (pick alphanumeric))
 			  :min 5 :max 5))]
     (given [local-factory (fn [] (local address))]
-      (send-message-test local-factory local-factory)
-      (request-response-test local-factory local-factory))))
+      (send-message-test local-factory local-factory))))

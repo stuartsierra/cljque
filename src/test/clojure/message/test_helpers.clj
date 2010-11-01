@@ -19,16 +19,4 @@
       (stop (listener-factory))
       (expect (= @received [message])))))
 
-(defn request-response-test [listener-factory sender-factory]
-  (let [message (random-string)
-	response (random-string)
-	received (atom [])
-	receiver (fn [msg] (swap! received conj msg))
-	responder (fn [msg] response)]
-    (do-it "can respond to a request"
-      (respond (listener-factory) responder)
-      (Thread/sleep 100)
-      (request (sender-factory) message receiver)
-      (Thread/sleep 100)
-      (stop (listener-factory))
-      (expect (= @received [response])))))
+
