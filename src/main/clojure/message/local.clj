@@ -1,5 +1,6 @@
 (ns message.local
-  (:use message.api))
+  (:use message.api
+	[clojure.contrib.logging :only (debug warn)]))
 
 ;;; Private, local-only implementation
 
@@ -22,15 +23,19 @@
 
 (defrecord LocalAddress [address]
   Listener
-    (listen [this f]
-      (future (set-listener address f)))
+    (listen! [this f]
+      (debug "Starting local listener" address)
+      (set-listener address f))
   Stoppable
-    (stop [this]
-      (future (remove-listener address)))
+    (stop! [this]
+      (debug "Stopping local listener" address)
+      (remove-listener address))
   MessageTarget
-    (send-message [this message]
-      (when-let [f (get @listeners address)]
-	(future (f message)))))
+    (send! [this message]
+      (debug "Sending local message to" address ":" (pr-str message))
+      (if-let [f (get @listeners address)]
+	(future (f message))
+	(warn "No local listener for" address))))
 
 (defn local [address]
   (LocalAddress. address))

@@ -12,11 +12,12 @@
 	received (atom [])
 	receiver (fn [msg] (swap! received conj msg))]
     (do-it "can send and receive a message"
-      (listen (listener-factory) receiver)
-      (Thread/sleep 100)
-      (send-message (sender-factory) message)
-      (Thread/sleep 100)
-      (stop (listener-factory))
-      (expect (= @received [message])))))
+      (let [listener (listener-factory)]
+	(listen! listener receiver)
+	(Thread/sleep 100)
+	(send! (sender-factory) message)
+	(Thread/sleep 100)
+	(stop! listener)
+	(expect (= @received [message]))))))
 
 
