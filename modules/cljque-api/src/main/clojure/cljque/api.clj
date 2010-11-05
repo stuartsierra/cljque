@@ -5,7 +5,8 @@
 (defprotocol Listener
   (listen! [this f]
     "Starts listening for messages. When a message is received,
-    invokes f in a future with the message as its argument."))
+    invokes f, possibly in another thread, with the message as its
+    argument."))
 
 (defprotocol Stoppable
   (stop! [this]
