@@ -99,14 +99,15 @@
 (defn- make-command-fn
   "Returns the function that sends commands to the event loop."
   [command-endpoint ^LinkedBlockingQueue command-queue]
-  (fn [f]
-    (debug "Sending command" f)
-    (.put command-queue f)
-    (doto (socket ZMQ/PUB)
-      (.connect command-endpoint)
-      (.send (byte-array 0) 0)
-      (.close))
-    nil))
+  (let [marker (byte-array 0)]
+    (fn [f]
+      (debug "Sending command" f)
+      (.put command-queue f)
+      (doto (socket ZMQ/PUB)
+	(.connect command-endpoint)
+	(.send marker 0)
+	(.close))
+      nil)))
 
 (defn start-event-loop
   "Starts an event loop in another thread for processing messages to
