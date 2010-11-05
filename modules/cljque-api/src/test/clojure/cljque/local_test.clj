@@ -1,6 +1,6 @@
-(ns message.local-test
-  (:use message.local
-	message.test-helpers
+(ns cljque.local-test
+  (:use cljque.local
+	cljque.test-helpers
 	[lazytest.describe :only (describe do-it given for-any)]
 	[lazytest.random :only (list-of string-of pick alphanumeric)]))
 

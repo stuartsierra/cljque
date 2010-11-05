@@ -33,6 +33,7 @@
   <modules>
     <module>modules/cljque-parent</module>
     <module>modules/cljque-api</module>
+    <module>modules/cljque-zeromq</module>
   </modules>
   <build>
     <extensions>

@@ -1,5 +1,5 @@
 (ns cljque.local
-  (:use message.api
+  (:use cljque.api
 	[clojure.contrib.logging :only (debug warn)]))
 
 ;;; Private, local-only implementation
