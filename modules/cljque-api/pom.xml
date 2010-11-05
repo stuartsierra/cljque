@@ -15,6 +15,16 @@
     <relativePath>../cljque-parent</relativePath>
   </parent>
   <build>
+    <resources>
+      <resource>
+	<directory>src/main/clojure</directory>
+      </resource>
+    </resources>
+    <testResources>
+      <testResource>
+	<directory>src/test/clojure</directory>
+      </testResource>
+    </testResources>
     <plugins>
       <plugin>
         <groupId>com.theoryinpractise</groupId>
