@@ -31,6 +31,9 @@
       (.connect socket endpoint))
     socket))
 
+(defn stop-socket [this]
+  ((zmq) (el/make-close-socket-command this)))
+
 (defrecord ZMQTCPSUBSocket [connection-type host port subscription]
   Listener
     (listen [this f]
@@ -40,13 +43,13 @@
 		 (.subscribe subscription))
 	      f)))
   Stoppable
-    (stop [this] ((zmq) (el/make-close-socket-command this)))
+    (stop [this] (stop-socket this))
   MessageTarget
     (send-message [this message] ((zmq) (el/make-send-command this message))))
 
 (defrecord ZMQTCPPUBSocket [connection-type host port]
   Stoppable
-    (stop [this] ((zmq) (el/make-close-socket-command this)))
+    (stop [this] (stop-socket this))
   MessageTarget
     (send-message [this message] ((zmq) (el/make-send-command this message))))
 
