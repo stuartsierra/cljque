@@ -91,6 +91,16 @@
         <enabled>true</enabled>
       </snapshots>
     </repository>
+    <repository>
+      <id>stuartsierra-releases</id>
+      <url>http://stuartsierra.com/m2releases</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
   </repositories>
   <build>
     <plugins>
