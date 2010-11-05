@@ -1,4 +1,4 @@
-(ns message.api)
+(ns cljque.api)
 
 ;;; Message receiver protocols
 

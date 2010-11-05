@@ -1,4 +1,4 @@
-(ns message.local
+(ns cljque.local
   (:use message.api
 	[clojure.contrib.logging :only (debug warn)]))
 
