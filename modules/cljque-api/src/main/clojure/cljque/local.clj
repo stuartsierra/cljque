@@ -1,41 +1,38 @@
 (ns cljque.local
   (:use cljque.api
-	[clojure.contrib.logging :only (debug warn)]))
+        [clojure.contrib.logging :only (debug warn)]))
 
 ;;; Private, local-only implementation
 
 (def ^{:private true} listeners (ref {}))
 
-(defn- set-listener [address f]
+(defn- set-listener [address key f]
   (dosync
-   (when (get @listeners address)
-     (throw (IllegalArgumentException.
-	     (str "Tried to add second listener to ") (pr-str address))))
-   (alter listeners assoc address f)))
+   (alter listeners assoc-in [address key] f)))
 
-(defn- remove-listener [address]
+(defn- remove-listener [address key]
   (dosync
-   (alter listeners dissoc address)))
-
-(declare local)
+   (alter listeners update-in [address] dissoc key)
+   (when (empty? (get @listeners address))
+     (alter listeners dissoc address))))
 
 ;;; Generic send/listen message API
 
 (defrecord LocalAddress [address]
-  Listener
-    (listen! [this f]
-      (debug "Starting local listener" address)
-      (set-listener address f))
-  Stoppable
-    (stop! [this]
-      (debug "Stopping local listener" address)
-      (remove-listener address))
+  Observable
+  (subscribe! [this key f]
+	      (debug "Listening to" address "with key" key)
+	      (set-listener address key f))
+  (unsubscribe! [this key]
+		(debug "Unlistening to" address "with key" key)
+		(remove-listener address key))
   MessageTarget
-    (send! [this message]
-      (debug "Sending local message to" address ":" (pr-str message))
-      (if-let [f (get @listeners address)]
-	(future (f message))
-	(warn "No local listener for" address))))
+  (send! [this message]
+	 (debug "Sending to" address (pr-str message))
+	 (doseq [[k f] (get @listeners address)]
+	   (future (f this k message)))
+	 nil))
 
 (defn local [address]
   (LocalAddress. address))
+
