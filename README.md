@@ -1,4 +1,4 @@
-Cljque - experiments in message-passing architectures in Clojure
+Cljque - experiments in event-based architectures in Clojure
 
 Cljque is pronounced "clique" or "click"
 
@@ -14,42 +14,6 @@ other, from this software.
 
 
 
-Using the Library
-========================================
-
-Cljque defines a simple API for sending messages and listening for
-messages.  The core functions are defined by protocols in
-`cljque.api`.
-
-The `listen!` function starts listening for messages received by some
-Listener object.
-
-    (listen! listener-target receiver-fn)
-
-The listener-target may be any object implementing the `Listener`
-protocol.  When listener-target receives a message, it invokes the
-given receiver-fn with the message as its argument.
-
-To send a message, use the `send!` function:
-
-    (send! target message)
-
-The target may be any object implementing the `MessageTarget`
-protocol.
-
-To "close" or "shutdown" a target, i.e. to stop all listening and
-sending, use the `stop!` function:
-
-    (stop! target)
-
-Different implementations provide access to different messaging
-systems.
-
-`cljque.local` does in-process messaging between threads.
-
-`cljque.javasocket` uses Java Socket and ServerSocket.
-
-`cljque.zeromq` uses ZeroMQ sockets.
 
 
 
