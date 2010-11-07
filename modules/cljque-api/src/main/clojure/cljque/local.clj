@@ -20,10 +20,10 @@
 
 (defrecord LocalAddress [address]
   Observable
-  (subscribe! [this key f]
+  (subscribe [this key f]
 	      (debug "Listening to" address "with key" key)
 	      (set-listener address key f))
-  (unsubscribe! [this key]
+  (unsubscribe [this key]
 		(debug "Unlistening to" address "with key" key)
 		(remove-listener address key))
   MessageTarget
