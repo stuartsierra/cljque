@@ -5,7 +5,7 @@
   </properties>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.stuartsierra</groupId>
-  <artifactId>cljque-api</artifactId>
+  <artifactId>cljque-base</artifactId>
   <version>${cljque.version}</version>
   <name>${artifactId}</name>
   <parent>

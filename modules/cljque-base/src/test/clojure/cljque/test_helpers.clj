@@ -10,14 +10,14 @@
 (defn send-message-test [listener-factory sender-factory]
   (let [message (random-string)
 	received (atom [])
-	receiver (fn [msg] (swap! received conj msg))]
+	receiver (fn [_ _ msg] (swap! received conj msg))]
     (do-it "can send and receive a message"
       (let [listener (listener-factory)]
-	(listen! listener receiver)
+	(subscribe listener :foo receiver)
 	(Thread/sleep 100)
 	(send! (sender-factory) message)
 	(Thread/sleep 100)
-	(stop! listener)
+	(unsubscribe listener :foo)
 	(expect (= @received [message]))))))
 
 
