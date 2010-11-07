@@ -1,7 +1,7 @@
 (ns cljque.combinators
   (:use cljque.api))
 
-;;; Reusable Observable implementation
+;;; Reusable Observable implementations
 
 (defn range-events
   ([]
@@ -30,6 +30,25 @@
               (unsubscribe [this key]
                             (swap! keyset disj key))))))
 
+(defn once [value]
+  (reify Observable
+         (subscribe [this key f]
+                     (f this key value))
+         (unsubscribe [this key] nil)))
+
+(defn never []
+  (reify Observable
+	 (subscribe [this key f] nil)
+	 (unsubscribe [this key] nil)))
+
+;;; Wrapper implementations
+
+(comment
+  (defmacro wrap-observable [obs &body]
+    `(reify Observable
+	    ~@body
+	    (unsubscribe [this key] (unsubscribe ~obs key)))))
+
 (defn map-events [f o]
   (reify Observable
 	 (subscribe [this key g]
@@ -45,13 +64,32 @@
 	 (unsubscribe [this key]
 		       (unsubscribe o key))))
 
-(defn once [value]
-  (reify Observable
-         (subscribe [this key f]
-                     (f this key value))
-         (unsubscribe [this key] nil)))
+(defn change-events [o]
+  (let [values (atom [nil ::unset])]
+    (reify Observable
+	   (subscribe [this key f]
+		      (subscribe o key (fn [this key new]
+					 (f this key
+					    (swap! values (fn [[older old]] [old new]))))))
+	   (unsubscribe [this key]
+			(unsubscribe o key)))))
 
-(defn never []
-  (reify Observable
-	 (subscribe [this key f] nil)
-	 (unsubscribe [this key] nil)))
+(defn distinct-events [o]
+  (let [o (change-events o)]
+    (reify Observable
+	   (subscribe [this key f]
+		      (subscribe o key (fn [this key [old new]]
+					 (when-not (= old new)
+					   (f this key new)))))
+	   (unsubscribe [this key]
+			(unsubscribe o key)))))
+
+(defn delta-events [f o]
+  (let [o (change-events o)]
+    (reify Observable
+	   (subscribe [this key g]
+		      (subscribe o key (fn [this key [old new]]
+					 (when-not (= old ::unset)
+					   (g this key (f new old))))))
+	   (unsubscribe [this key]
+			(unsubscribe o key)))))

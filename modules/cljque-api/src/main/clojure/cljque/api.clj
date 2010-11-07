@@ -15,3 +15,13 @@
 (defprotocol MessageTarget
   (send! [this message]
     "Sends a message asynchronously."))
+
+;;; IRef implementation
+
+(extend clojure.lang.IRef
+  Observable
+  {:subscribe (fn [this key f]
+		(add-watch this key
+			   (fn [key this old new]
+			     (f this key new))))
+   :unsubscribe remove-watch})
