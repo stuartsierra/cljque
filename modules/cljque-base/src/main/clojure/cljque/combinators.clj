@@ -3,6 +3,35 @@
 
 ;;; Reusable Observable implementations
 
+(defn seq-observable
+  "Creates an infinite sequence of events from an observable.
+  Consuming the sequence will block if no more events have been
+  generated."
+  [o]
+  (let [q (java.util.concurrent.LinkedBlockingQueue.)
+	consumer (fn this []
+		   (lazy-seq
+		    (cons (.take q) (this))))]
+    (subscribe o (gensym "seq-observable")
+	       (fn [o key value]
+		 (.put q value)))
+    (consumer)))
+
+(defn observable-seq
+  "Creates an observer that generates events by consuming a sequence."
+  [s]
+  (let [keyset (atom #{})]
+    (reify Observable
+	   (subscribe [this key f]
+		      (swap! keyset conj key)
+		      (future (loop [xs s]
+				(when (contains? @keyset key)
+				  (when-first [x xs]
+					      (f this key x)
+					      (recur (next xs)))))))
+	   (unsubscribe [this key]
+			(swap! keyset disj key)))))
+
 (defn range-events
   ([]
      (let [keyset (atom #{})]
