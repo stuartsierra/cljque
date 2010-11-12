@@ -8,13 +8,21 @@
   Consuming the sequence will block if no more events have been
   generated."
   [o]
-  (let [q (java.util.concurrent.LinkedBlockingQueue.)
+  (let [terminator (Object.)
+	q (java.util.concurrent.LinkedBlockingQueue.)
 	consumer (fn this []
 		   (lazy-seq
-		    (cons (.take q) (this))))]
+		    (let [x (.take q)]
+		      (when (not= x terminator)
+			(cons x (this))))))]
     (subscribe o (gensym "seq-observable")
-	       (fn [o key value]
-		 (.put q value)))
+	       (reify Observer
+		      (event [this observed key event]
+			     (.put q event))
+		      (done [this observed key]
+			    (.put q terminator))
+		      (error [this observed key e]
+			     (throw e))))
     (consumer)))
 
 (defn observable-seq
@@ -22,13 +30,15 @@
   [s]
   (let [keyset (atom #{})]
     (reify Observable
-	   (subscribe [this key f]
+	   (subscribe [this key observer]
 		      (swap! keyset conj key)
 		      (future (loop [xs s]
 				(when (contains? @keyset key)
-				  (when-first [x xs]
-					      (f this key x)
-					      (recur (next xs)))))))
+				  (let [x (first xs)]
+				    (if x
+				      (do (event observer this key x)
+					  (recur (next xs)))
+				      (done observer this key)))))))
 	   (unsubscribe [this key]
 			(swap! keyset disj key)))))
 
@@ -36,89 +46,96 @@
   ([]
      (let [keyset (atom #{})]
        (reify Observable
-              (subscribe [this key f]
-                          (swap! keyset conj key)
-                          (future (loop [i 0]
-                                    (when (contains? @keyset key)
-                                      (f this key i)
-                                      (recur (inc i))))))
+              (subscribe [this key observer]
+			 (swap! keyset conj key)
+			 (future (loop [i 0]
+				   (when (contains? @keyset key)
+				     (event observer this key i)
+				     (recur (inc i))))))
               (unsubscribe [this key]
-                            (swap! keyset disj key)))))
+			   (swap! keyset disj key)))))
   ([finish]
      (range-events 0 finish))
   ([start finish]
      (let [keyset (atom #{})]
        (reify Observable
-              (subscribe [this key f]
-                          (swap! keyset conj key)
-                          (future (loop [i start]
-                                    (when (and (contains? @keyset key)
-                                               (< i finish))
-                                      (f this key i)
-                                      (recur (inc i))))))
+              (subscribe [this key observer]
+			 (swap! keyset conj key)
+			 (future (loop [i start]
+				   (if (and (contains? @keyset key)
+					    (< i finish))
+				     (do (event observer this key i)
+					 (recur (inc i)))
+				     (done observer this key)))))
               (unsubscribe [this key]
-                            (swap! keyset disj key))))))
+			   (swap! keyset disj key))))))
 
 (defn once [value]
   (reify Observable
-         (subscribe [this key f]
-                     (f this key value))
+         (subscribe [this key observer]
+		    (event observer this key value)
+		    (done observer this key))
          (unsubscribe [this key] nil)))
 
 (defn never []
   (reify Observable
-	 (subscribe [this key f] nil)
+	 (subscribe [this key observer]
+		    (done observer this key))
 	 (unsubscribe [this key] nil)))
 
-;;; Wrapper implementations
+;;; Wrappers
 
-(comment
-  (defmacro wrap-observable [obs &body]
-    `(reify Observable
-	    ~@body
-	    (unsubscribe [this key] (unsubscribe ~obs key)))))
+(defn handle-events [f o]
+  (reify Observable
+	 (subscribe [this key observer]
+		    (subscribe o key
+			       (reify Observer
+				      (event [this observable key value]
+					     (f observer observable key value))
+				      (done [this observable key]
+					    (done observer observable key))
+				      (error [this observable key e]
+					     (error observer observable key e)))))
+	 (unsubscribe [this key]
+		      (unsubscribe o key))))
 
 (defn map-events [f o]
-  (reify Observable
-	 (subscribe [this key g]
-		     (subscribe o key (comp g f)))
-	 (unsubscribe [this key]
-		       (unsubscribe o key))))
+  (handle-events (fn [observer observable key value]
+		   (event observer observable key (f value)))
+		 o))
 
 (defn filter-events [f o]
-  (reify Observable
-	 (subscribe [this key g]
-		     (subscribe o key (fn [o k m]
-					 (when (f m) (g this key m)))))
-	 (unsubscribe [this key]
-		       (unsubscribe o key))))
+  (handle-events (fn [observer observable key value]
+		   (when (f value)
+		     (event observer observable key value)))
+		 o))
 
-(defn change-events [o]
-  (let [values (atom [nil ::unset])]
-    (reify Observable
-	   (subscribe [this key f]
-		      (subscribe o key (fn [this key new]
-					 (f this key
-					    (swap! values (fn [[older old]] [old new]))))))
-	   (unsubscribe [this key]
-			(unsubscribe o key)))))
+;; (defn change-events [o]
+;;   (let [values (atom [nil ::unset])]
+;;     (reify Observable
+;; 	   (subscribe [this key f]
+;; 		      (subscribe o key (fn [this key new]
+;; 					 (f this key
+;; 					    (swap! values (fn [[older old]] [old new]))))))
+;; 	   (unsubscribe [this key]
+;; 			(unsubscribe o key)))))
 
-(defn distinct-events [o]
-  (let [o (change-events o)]
-    (reify Observable
-	   (subscribe [this key f]
-		      (subscribe o key (fn [this key [old new]]
-					 (when-not (= old new)
-					   (f this key new)))))
-	   (unsubscribe [this key]
-			(unsubscribe o key)))))
+;; (defn distinct-events [o]
+;;   (let [o (change-events o)]
+;;     (reify Observable
+;; 	   (subscribe [this key f]
+;; 		      (subscribe o key (fn [this key [old new]]
+;; 					 (when-not (= old new)
+;; 					   (f this key new)))))
+;; 	   (unsubscribe [this key]
+;; 			(unsubscribe o key)))))
 
-(defn delta-events [f o]
-  (let [o (change-events o)]
-    (reify Observable
-	   (subscribe [this key g]
-		      (subscribe o key (fn [this key [old new]]
-					 (when-not (= old ::unset)
-					   (g this key (f new old))))))
-	   (unsubscribe [this key]
-			(unsubscribe o key)))))
+;; (defn delta-events [f o]
+;;   (let [o (change-events o)]
+;;     (reify Observable
+;; 	   (subscribe [this key g]
+;; 		      (subscribe o key (fn [this key [old new]]
+;; 					 (when-not (= old ::unset)
+;; 					   (g this key (f new old))))))
+;; 	   (unsubscribe [this key]
+;; 			(unsubscribe o key)))))

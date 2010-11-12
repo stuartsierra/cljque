@@ -4,17 +4,15 @@
 	[lazytest.describe :only (describe it given for-any)]
 	[lazytest.random :only (integer)]))
 
-;;; All these will fail until observables support "stop" events.
+(describe observable-seq
+  (for-any [n (integer :min 0 :max 100)]
+	   (it (= (range n) (seq-observable (observable-seq (range n)))))))
 
-;; (describe observable-seq
-;;   (for-any [n (integer :max 100)]
-;; 	   (= (range n) (seq-observable (observable-seq (range n))))))
+(describe seq-observable
+  (for-any [n (integer :min 0 :max 100)]
+	   (it (= (range n) (seq-observable (range-events n))))))
 
-;; (describe seq-observable
-;;   (for-any [n (integer :max 100)]
-;; 	   (= (range n) (seq-observable (range n)))))
-
-;; (describe range-events
-;;   (for-any [n (integer)]
-;; 	   (it "generates n events"
-;; 	     (= n (count (seq-observable (range-events n)))))))
+(describe range-events
+  (for-any [n (integer :min 0 :max 100)]
+	   (it "generates n events"
+	     (= n (count (seq-observable (range-events n)))))))

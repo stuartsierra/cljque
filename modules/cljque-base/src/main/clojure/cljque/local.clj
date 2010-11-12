@@ -20,17 +20,17 @@
 
 (defrecord LocalAddress [address]
   Observable
-  (subscribe [this key f]
+  (subscribe [this key observer]
 	      (debug "Listening to" address "with key" key)
-	      (set-listener address key f))
+	      (set-listener address key observer))
   (unsubscribe [this key]
 		(debug "Unlistening to" address "with key" key)
 		(remove-listener address key))
   MessageTarget
   (send! [this message]
 	 (debug "Sending to" address (pr-str message))
-	 (doseq [[k f] (get @listeners address)]
-	   (future (f this k message)))
+	 (doseq [[k observer] (get @listeners address)]
+	   (future (event observer this k message)))
 	 nil))
 
 (defn local [address]
