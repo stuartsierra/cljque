@@ -110,32 +110,23 @@
 		     (event observer observable key value)))
 		 o))
 
-;; (defn change-events [o]
-;;   (let [values (atom [nil ::unset])]
-;;     (reify Observable
-;; 	   (subscribe [this key f]
-;; 		      (subscribe o key (fn [this key new]
-;; 					 (f this key
-;; 					    (swap! values (fn [[older old]] [old new]))))))
-;; 	   (unsubscribe [this key]
-;; 			(unsubscribe o key)))))
+(defn change-events [o]
+  (let [values (atom [nil ::unset])]
+    (handle-events (fn [observer observable key value]
+		     (event observer observable key
+			    (swap! values (fn [[older old]] [old value]))))
+		   o)))
 
-;; (defn distinct-events [o]
-;;   (let [o (change-events o)]
-;;     (reify Observable
-;; 	   (subscribe [this key f]
-;; 		      (subscribe o key (fn [this key [old new]]
-;; 					 (when-not (= old new)
-;; 					   (f this key new)))))
-;; 	   (unsubscribe [this key]
-;; 			(unsubscribe o key)))))
+(defn distinct-events [o]
+  (let [o (change-events o)]
+    (handle-events (fn [observer observable key [old new]]
+		     (when-not (= old new)
+		       (event observer observable key new)))
+		   o)))
 
-;; (defn delta-events [f o]
-;;   (let [o (change-events o)]
-;;     (reify Observable
-;; 	   (subscribe [this key g]
-;; 		      (subscribe o key (fn [this key [old new]]
-;; 					 (when-not (= old ::unset)
-;; 					   (g this key (f new old))))))
-;; 	   (unsubscribe [this key]
-;; 			(unsubscribe o key)))))
+(defn delta-events [f o]
+  (let [o (change-events o)]
+    (handle-events (fn [observer observable key [old new]]
+		     (when-not (= old ::unset)
+		       (event observer observable key (f new old))))
+		   o)))
