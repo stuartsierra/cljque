@@ -110,23 +110,33 @@
 		     (event observer observable key value)))
 		 o))
 
-(defn change-events [o]
+(defn watch-events [o]
   (let [values (atom [nil ::unset])]
     (handle-events (fn [observer observable key value]
 		     (event observer observable key
 			    (swap! values (fn [[older old]] [old value]))))
 		   o)))
 
-(defn distinct-events [o]
-  (let [o (change-events o)]
+(defn change-events [o]
+  (let [o (watch-events o)]
     (handle-events (fn [observer observable key [old new]]
 		     (when-not (= old new)
 		       (event observer observable key new)))
 		   o)))
 
 (defn delta-events [f o]
-  (let [o (change-events o)]
+  (let [o (watch-events o)]
     (handle-events (fn [observer observable key [old new]]
 		     (when-not (= old ::unset)
 		       (event observer observable key (f new old))))
+		   o)))
+
+(defn distinct-events [o]
+  (let [seen (ref #{})]
+    (handle-events (fn [observer observable key value]
+		     (when-not (dosync
+				(let [old-seen @seen]
+				  (commute seen conj value)
+				  (contains? old-seen value)))
+		       (event observer observable key value)))
 		   o)))
