@@ -43,4 +43,4 @@
    :done (fn [this observable key]
 	   (this observable key ::done))
    :error (fn [this observable key e]
-	    (this observable key e))})
+	    (this observable key {::error e}))})
