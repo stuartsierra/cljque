@@ -4,7 +4,7 @@
 ;;; Reusable Observable implementations
 
 (defn seq-observable
-  "Creates an infinite sequence of events from an observable.
+  "Returns a sequence of events from an observable.
   Consuming the sequence will block if no more events have been
   generated."
   [o]
@@ -25,8 +25,9 @@
 			     (throw e))))
     (consumer)))
 
-(defn observable-seq
-  "Creates an observer that generates events by consuming a sequence."
+(defn observe-seq
+  "Returns an observer that generates events by consuming a sequence
+  on a separate thread."
   [s]
   (let [keyset (atom #{})]
     (reify Observable
@@ -98,6 +99,32 @@
 					     (error observer observable key e)))))
 	 (unsubscribe [this key]
 		      (unsubscribe o key))))
+
+(defn take-events [n o]
+  (let [sub-counts (ref {})]
+    (reify Observable
+	   (subscribe [this key observer]
+		      (dosync (alter sub-counts assoc key 0))
+		      (subscribe o key
+				 (reify Observer
+					(event [this observable key value]
+					       (let [c (dosync
+							(when (contains? @sub-counts key)
+							  (alter sub-counts update-in [key] inc)
+							  (get @sub-counts key)))]
+						 (cond (= c n)  (do (event observer observable key value)
+								    (done observer observable key)
+								    (dosync (alter sub-counts dissoc key)))
+						       (< c n)  (event observer observable key value))))
+					(done [this observable key]
+					      (when (dosync
+						     (when (contains? @sub-counts key)
+						       (alter sub-counts update-in [key] inc)))
+						(done observer observable key)))
+					(error [this observable key e]
+					       (error observer observable key e)))))
+	   (unsubscribe [this key]
+			(dosync (alter sub-counts dissoc key))))))
 
 (defn map-events [f o]
   (handle-events (fn [observer observable key value]
