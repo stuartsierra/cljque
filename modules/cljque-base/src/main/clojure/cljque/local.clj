@@ -28,10 +28,10 @@
 		(remove-listener address key))
   MessageTarget
   (send! [this message]
+	 (io!)
 	 (debug "Sending to" address (pr-str message))
 	 (doseq [[k observer] (get @listeners address)]
-	   (future (event observer this k message)))
-	 nil))
+	   (future (event observer this k message)))))
 
 (defn local [address]
   (LocalAddress. address))
