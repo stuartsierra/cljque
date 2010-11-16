@@ -31,7 +31,7 @@
   {:subscribe (fn [this-ref key observer]
 		(add-watch this-ref key
 			   (fn [key iref old new]
-			     (event observer iref key new))))
+			     (event observer iref key [old new]))))
    :unsubscribe remove-watch})
 
 ;;; Functions are Observers
