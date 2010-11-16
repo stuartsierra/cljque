@@ -34,6 +34,13 @@
 			     (event observer iref key [old new]))))
    :unsubscribe remove-watch})
 
+;;; An Agent can wrap a MessageTarget and forward to it
+
+(extend clojure.lang.Agent
+  MessageTarget
+  {:send! (fn [this-agent message]
+	    (send this-agent send! message))})
+
 ;;; Functions are Observers
 
 (extend clojure.lang.IFn
