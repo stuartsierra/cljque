@@ -202,3 +202,13 @@
 				  (contains? old-seen value)))
 		       (event observer observable key value)))
 		   o)))
+
+(defn forward [source & targets]
+  (subscribe source (gensym "forward")
+	     (reify Observer
+		    (event [this observed key event]
+			   (doseq [t targets]
+			     (send! t event)))
+		    (done [this observed key] nil)
+		    (error [this observed key e]
+			   (throw e)))))
