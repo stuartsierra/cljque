@@ -31,7 +31,7 @@
   {:subscribe (fn [this-ref key observer]
 		(add-watch this-ref key
 			   (fn [key iref old new]
-			     (event observer iref key [old new]))))
+			     (event observer iref key new))))
    :unsubscribe remove-watch})
 
 ;;; An Agent can wrap a MessageTarget and forward to it
