@@ -1,10 +1,10 @@
-(ns cljque.agent-test
-  (:use cljque.api
-	cljque.local
-	cljque.combinators
-	[lazytest.describe :only (describe do-it for-any)]
-	[lazytest.expect :only (expect)]
-	[lazytest.random :only (list-of string-of pick alphanumeric integer)]))
+;; (ns cljque.agent-test
+;;   (:use cljque.api
+;; 	cljque.local
+;; 	cljque.combinators
+;; 	[lazytest.describe :only (describe do-it for-any)]
+;; 	[lazytest.expect :only (expect)]
+;; 	[lazytest.random :only (list-of string-of pick alphanumeric integer)]))
 
 ;; (describe "Agents"
 ;;   (for-any [nums (list-of (integer))]

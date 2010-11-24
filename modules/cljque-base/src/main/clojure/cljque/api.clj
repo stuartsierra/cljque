@@ -3,20 +3,20 @@
 ;;; Message receiver protocols
 
 (defprotocol Observer
-  (event [this observable key event]
+  (event [this observable event]
     "Called when observable generates an event.")
-  (done [this observable key]
+  (done [this observable]
     "Called when observable o is finished generating events.")
-  (error [this observable key e]
+  (error [this observable e]
     "Called when observable throws an exception e."))
 
 (defprotocol Observable
-  (subscribe [this key observer]
+  (subscribe [this observer]
     "Starts listening for messages. When a message is received,
     invokes f, possibly in another thread, with three arguments: this
-    Observable, the key, and the message.")
-  (unsubscribe [this key]
-    "Stops sending events to the observer identified by key."))
+    Observable, the key, and the message.
+
+    Returns a no-arg function which unsubscribes the observer."))
 
 ;;; Message sending protocols
 
@@ -28,11 +28,12 @@
 
 (extend clojure.lang.IRef
   Observable
-  {:subscribe (fn [this-ref key observer]
-		(add-watch this-ref key
-			   (fn [key iref old new]
-			     (event observer iref key new))))
-   :unsubscribe remove-watch})
+  {:subscribe (fn [this-ref observer]
+		(let [key (Object.)]
+		  (add-watch this-ref key
+			     (fn [key iref old new]
+			       (event observer iref new)))
+		  (fn [] (remove-watch this-ref key))))})
 
 ;;; An Agent can wrap a MessageTarget and forward to it
 
@@ -45,9 +46,9 @@
 
 (extend clojure.lang.IFn
   Observer
-  {:event (fn [this observable key event]
-	    (this observable key event))
-   :done (fn [this observable key]
-	   (this observable key ::done))
-   :error (fn [this observable key e]
-	    (this observable key {::error e}))})
+  {:event (fn [this-fn observable event]
+	    (this-fn observable event))
+   :done (fn [this-fn observable]
+	   (this-fn observable ::done))
+   :error (fn [this-fn observable e]
+	    (this-fn observable {::error e}))})

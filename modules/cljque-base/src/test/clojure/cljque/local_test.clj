@@ -29,9 +29,9 @@
     (let [lcl (local (gensym))
 	  agnt (agent lcl)
 	  log (atom [])
-	  obs (fn [observed key value]
+	  obs (fn [observed value]
 		(swap! log conj value))]
-      (subscribe lcl (gensym) obs)
+      (subscribe lcl obs)
       (dosync (send agnt send! "hello"))
       (Thread/sleep 500)
       (expect (= ["hello"] @log))))
@@ -40,9 +40,9 @@
     (let [lcl (local (gensym))
 	  agnt (agent lcl)
 	  log (atom [])
-	  obs (fn [observed key value]
+	  obs (fn [observed value]
 		(swap! log conj value))]
-      (subscribe lcl (gensym) obs)
+      (subscribe lcl obs)
       (try (dosync (throw (Exception.))
 		   (send agnt send! "hello"))
 	   (catch Exception e nil))

@@ -1,8 +1,8 @@
-(ns cljque.ref-test
-  (:use cljque.api
-	cljque.combinators
-	[lazytest.describe :only (describe do-it)]
-	[lazytest.expect :only (expect)]))
+;; (ns cljque.ref-test
+;;   (:use cljque.api
+;; 	cljque.combinators
+;; 	[lazytest.describe :only (describe do-it)]
+;; 	[lazytest.expect :only (expect)]))
 
 ;; (defn expect-change-events [s]
 ;;   (expect (= (list [1 2] [2 4] [4 8] [8 16]) (take 4 s))))
