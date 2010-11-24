@@ -1,7 +1,8 @@
 (ns cljque.combinator-test
   (:use cljque.api
 	cljque.combinators
-	[lazytest.describe :only (describe it given for-any)]
+	[lazytest.describe :only (describe it testing do-it given for-any)]
+	[lazytest.expect :only (expect)]
 	[lazytest.random :only (integer)]))
 
 (describe observe-seq
@@ -35,4 +36,12 @@
 
 (describe take-events
   (it (= (list 0 1 2 3 4)
-	 (seq-observable (take-events 5 (range-events 10))))))
+	 (seq-observable (take-events 5 (range-events 10)))))
+  (testing "with multiple subscribers"
+    (do-it (let [r (range-events 10)
+		 t1 (take-events 5 r)
+		 t2 (take-events 3 r)
+		 s1 (seq-observable t1)
+		 s2 (seq-observable t2)]
+	     (expect (= (list 0 1 2 3 4) s1))
+	     (expect (= (list 0 1 2) s2))))))
