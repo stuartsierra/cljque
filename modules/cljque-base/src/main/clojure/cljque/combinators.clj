@@ -111,30 +111,24 @@
   "Returns an Observable which wraps Observable o and passes up to n
   events to each subscriber."
   [n o]
-  (let [key (Object.)
-	sub-counts (ref {})]
-    (reify Observable
-	   (subscribe [this observer]
-		      (dosync (alter sub-counts assoc key 0))
+  (reify Observable
+	 (subscribe [this observer]
+		    (let [event-count (atom 0)
+			  counter (fn [] (swap! event-count (fn [c] (when (and c (<= c n)) (inc c)))))]
 		      (subscribe o
 				 (reify Observer
 					(event [this observable value]
-					       (let [c (dosync
-							(when (contains? @sub-counts key)
-							  (alter sub-counts update-in [key] inc)
-							  (get @sub-counts key)))]
-						 (cond (= c n)  (do (event observer observable value)
-								    (done observer observable)
-								    (dosync (alter sub-counts dissoc key)))
-						       (< c n)  (event observer observable value))))
+					       (when-let [c (counter)]
+						 (if (= c n)
+						   (do (event observer observable value)
+						       (done observer observable))
+						   (event observer observable value))))
 					(done [this observable]
-					      (when (dosync
-						     (when (contains? @sub-counts key)
-						       (alter sub-counts update-in [key] inc)))
+					      (when (counter)
 						(done observer observable)))
 					(error [this observable e]
 					       (error observer observable e))))
-		      (fn [] (dosync (alter sub-counts dissoc key)))))))
+		      (fn [] (reset! event-count false))))))
 
 (defn map-events
   "Returns an Observable which wraps Observable o by applying f to the
@@ -200,6 +194,7 @@
 
 (defn forward [source & targets]
   ;; How do you unsubscribe this?
+  ;; Subscrib on source returns a fn, just like always.
   (subscribe source
 	     (reify Observer
 		    (event [this observed event]
