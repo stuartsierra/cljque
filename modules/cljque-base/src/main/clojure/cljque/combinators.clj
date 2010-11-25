@@ -33,47 +33,41 @@
   "Returns an observer that generates events by consuming a sequence
   on a separate thread."
   [s]
-  (let [keyset (atom #{})]
-    (reify Observable
-	   (subscribe [this observer]
-		      (let [key (Object.)]
-			(swap! keyset conj key)
-			(future (loop [xs s]
-				  (when (contains? @keyset key)
-				    (let [x (first xs)]
-				      (if x
-					(do (event observer this x)
-					    (recur (next xs)))
-					(done observer this))))))
-			(fn [] (swap! keyset disj key)))))))
+  (reify Observable
+	 (subscribe [this observer]
+		    (let [continue (atom true)]
+		      (future (loop [xs s]
+				(when @continue
+				  (let [x (first xs)]
+				    (if x
+				      (do (event observer this x)
+					  (recur (next xs)))
+				      (done observer this))))))
+		      (fn [] (reset! continue false))))))
 
 (defn range-events
   ([]
-     (let [keyset (atom #{})]
-       (reify Observable
-              (subscribe [this observer]
-			 (let [key (Object.)]
-			  (swap! keyset conj key)
-			  (future (loop [i 0]
-				    (when (contains? @keyset key)
-				      (event observer this i)
-				      (recur (inc i)))))
-			  (fn [] (swap! keyset disj key)))))))
+     (reify Observable
+	    (subscribe [this observer]
+		       (let [continue (atom true)]
+			 (future (loop [i 0]
+				   (when @continue
+				     (event observer this i)
+				     (recur (inc i)))))
+			 (fn [] (reset! continue false))))))
   ([finish]
      (range-events 0 finish))
   ([start finish]
-     (let [keyset (atom #{})]
-       (reify Observable
-              (subscribe [this observer]
-			 (let [key (Object.)]
-			   (swap! keyset conj key)
-			   (future (loop [i start]
-				     (when (contains? @keyset key)
-				       (if (< i finish)
-					 (do (event observer this i)
-					     (recur (inc i)))
-					 (done observer this)))))
-			   (fn [] (swap! keyset disj key))))))))
+     (reify Observable
+	    (subscribe [this observer]
+		       (let [continue (atom true)]
+			 (future (loop [i start]
+				   (when @continue
+				     (if (< i finish)
+				       (do (event observer this i)
+					   (recur (inc i)))
+				       (done observer this)))))
+			 (fn [] (reset! continue true)))))))
 
 (defn once
   "Returns an Observable which, when subscribed, generates one event
