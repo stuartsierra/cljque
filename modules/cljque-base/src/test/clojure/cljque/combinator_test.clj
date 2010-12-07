@@ -3,11 +3,29 @@
 	cljque.combinators
 	[lazytest.describe :only (describe it testing do-it given for-any)]
 	[lazytest.expect :only (expect)]
-	[lazytest.random :only (integer)]))
+	[lazytest.random :only (integer string-of pick alphanumeric)])
+  (:import (java.util.regex Pattern)))
+
+(defn contains-message? [obj message]
+  {:pre [(instance? Exception obj)
+	 (string? message)]}
+  (.contains (.getMessage obj) message))
 
 (describe observe-seq
   (for-any [n (integer :min 0 :max 100)]
 	   (it (= (range n) (seq-observable (observe-seq (range n)))))))
+
+(describe observe-seq
+ (do-it "catches exceptions"
+   (let [errors (atom nil)
+	 message ((string-of (pick alphanumeric)))
+	 my-observer (reify Observer
+			    (event [_ _ _])
+			    (done [_ _])
+			    (error [_ _ err] (reset! errors err)))]
+     (subscribe (observe-seq (lazy-seq (throw (Exception. message)))) my-observer)
+     (Thread/sleep 100)
+     (expect (contains-message? @errors message)))))
 
 (describe seq-observable
   (for-any [n (integer :min 0 :max 100)]

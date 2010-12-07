@@ -38,10 +38,13 @@
 		    (let [continue (atom true)]
 		      (future (loop [xs s]
 				(when @continue
-				  (if-let [x (first xs)]
-				    (do (event observer this x)
-					(recur (next xs)))
-				    (done observer this)))))
+				  (try
+				    (if-let [x (first xs)]
+				      (do (event observer this x)
+					  (recur (next xs)))
+				      (done observer this))
+				    (catch Throwable t
+				      (error observer this t))))))
 		      (fn [] (reset! continue false))))))
 
 (defn range-events
