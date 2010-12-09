@@ -35,7 +35,23 @@
     <module>modules/cljque-base</module>
   </modules>
   <build>
-    <extensions>
+    <resources>
+      <resource>
+	<directory>src/main/clojure</directory>
+      </resource>
+      <resource>
+	<directory>src/main/resources</directory>
+      </resource>
+    </resources>
+    <testResources>
+      <testResource>
+	<directory>src/test/clojure</directory>
+      </testResource>
+      <testResource>
+	<directory>src/test/resources</directory>
+      </testResource>
+    </testResources>
+   <extensions>
       <extension>
         <groupId>org.apache.maven.wagon</groupId>
         <artifactId>wagon-ftp</artifactId>
