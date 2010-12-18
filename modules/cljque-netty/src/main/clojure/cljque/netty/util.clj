@@ -1,4 +1,4 @@
-(ns cljque.netty
+(ns cljque.netty.util
   "Convenience functions for working with Netty from Clojure."
   (:use [clojure.java.io :only (reader resource)])
   (:import (java.net InetSocketAddress)))
@@ -186,7 +186,7 @@
 	(.sendUpstream context event))))))
 
 (defn create-nio-server
-  "Creates, starts, and returns a NIO socket server channel in one step.
+  "Creates, starts, and returns an NIO socket server in one step.
   The server will be listening for connections on port, responding
   using the pipeline returned by pipeline-factory-fn.
 
