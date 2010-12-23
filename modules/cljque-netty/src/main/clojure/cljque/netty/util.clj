@@ -170,20 +170,22 @@
   [bootstrap host port]
   (.connect bootstrap (InetSocketAddress. host port)))
 
+(defn channel-group-handler [channel-group]
+  (channel-upstream-handler
+   (fn [context event]
+     (when (and (instance? ChannelStateEvent event)
+		(= ChannelState/OPEN (.getState event))
+		(.getValue event))
+       (.add channel-group (.getChannel event)))
+     (.sendUpstream context event))))
+
 (defn add-channel-group-handler
   "Adds a handler to the head of the pipeline which adds any
   newly-opened channel to the channel-group."
   [pipeline channel-group]
   (doto pipeline
-    (.addFirst
-     "channel-group-handler"
-     (channel-upstream-handler
-      (fn [context event]
-	(when (and (instance? ChannelStateEvent event)
-		   (= ChannelState/OPEN (.getState event))
-		   (.getValue event))
-	  (.add channel-group (.getChannel event)))
-	(.sendUpstream context event))))))
+    (.addFirst "channel-group-handler"
+	       (channel-group-handler channel-group))))
 
 (defn create-nio-server
   "Creates, starts, and returns an NIO socket server in one step.
