@@ -22,6 +22,14 @@
    pipeline
    "observer" (observer-channel-handler observer)))
 
+(defn stateful-pipeline-factory [init-fn handler-fn pipeline-factory-fn]
+  (channel-pipeline-factory
+   #(let [state (init-fn)]
+      (add-to-pipeline
+       (pipeline-factory-fn)
+       "state-handler" (channel-upstream-handler
+			(partial handler-fn state))))))
+
 ;;; Message targets
 
 (extend-protocol MessageTarget
