@@ -4,54 +4,51 @@
 
 (import-netty)
 
-(defprotocol ChannelUpstreamHandlerProtocol
-  (bound [this])
-  (unbound [this])
-  (open [this])
-  (closed [this])
-  (connected [this])
-  (disconnected [this])
-  (interest-changed [this])
-  (child-channel-closed [this child-channel])
-  (child-channel-open [this child-channel])
-  (exception-caught [this exception])
-  (message [this message])
-  (write-complete [this written-amount]))
+(defn channel-event-map [^ChannelEvent netty-event]
+  (assoc (condp instance? netty-event
+	   MessageEvent
+	   {:event-type :message
+	    :message (.getMessage ^MessageEvent netty-event)}
 
-(defrecord MessageHandlers [bound closed connected disconnected
-                            interest-changed open unbound child-channel-closed
-                            child-channel-open exception-caught message
-                            write-complete]
-  ChannelUpstreamHandlerProtocol
-  (event [this observable netty-event]
-         (condp instance? netty-event
-           MessageEvent
-           (message (.getMessage ^MessageEvent netty-event))
+	   WriteCompletionEvent
+	   {:event-type :write-complete
+	    :written-amount (.getWrittenAmount
+			     ^WriteCompletionEvent netty-event)}
 
-           WriteCompletionEvent
-           (write-complete (.getWrittenAmount ^WriteCompletionEvent netty-event))
+	   ChildChannelStateEvent
+	   (let [child (.getChildChannel ^ChildChannelStateEvent netty-event)]
+	     (if (.isOpen child)
+	       {:event-type :child-channel-open
+		:child-channel child}
+	       {:event-type :child-channel-closed
+		:child-channel child}))
 
-           ChildChannelStateEvent
-           (let [child (.getChildChannel ^ChildChannelStateEvent netty-event)]
-             (if (.isOpen child)
-               (child-channel-open observable child)
-               (child-channel-closed observable child)))
-
-           ChannelStateEvent
-           (let [evnt ^ChannelStateEvent netty-event]
-             (condp = (.getState evnt)
+	   ChannelStateEvent
+	   (let [evnt ^ChannelStateEvent netty-event]
+	     (condp = (.getState evnt)
 		 ChannelState/OPEN (if (.getValue evnt)
-				     (open observable)
-				     (closed observable))
+				     {:event-type :open}
+				     {:event-type :closed})
 		 ChannelState/BOUND (if (.getValue evnt)
-				      (bound observable)
-				      (unbound observable))
+				      {:event-type :bound}
+				      {:event-type :unbound})
 		 ChannelState/CONNECTED (if (.getValue evnt)
-					  (connected observable)
-					  (disconnected observable))
-		 ChannelState/INTEREST_OPS (interest-changed observable)))
+					  {:event-type :connected}
+					  {:event-type :disconnected})
+		 ChannelState/INTEREST_OPS {:event-type :interest-changed}))
 
 	   ExceptionEvent
-	   (exception-caught observable (.getCause ^ExceptionEvent netty-event)))))
+	   {:event-type :exception-caught
+	    :cause (.getCause ^ExceptionEvent netty-event)}
 
-(defrecord ChannelAgentState [channel handlers])
+	   IdleStateEvent
+	   (let [^IdleStateEvent evnt netty-event]
+	     {:event-type :idle
+	      :last-activity-time (.getLastActivityTime evnt)
+	      :state (condp = (.getState evnt)
+			 IdleState/ALL_IDLE :all-idle
+			 IdleState/READER_IDLE :reader-idle
+			 IdleState/WRITER_IDLE :writer-idle)}))
+    ;; assoc generic ChannelEvent fields:
+    :channel (.getChannel netty-event)
+    :future (.getFuture netty-event)))
