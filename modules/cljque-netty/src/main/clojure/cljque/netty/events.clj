@@ -20,6 +20,20 @@
 	      (filter-events #(instance? MessageEvent %)
 			     observable-channel)))
 
+(def channel-state-keyword
+     {ChannelState/OPEN :open?
+      ChannelState/BOUND :bound?
+      ChannelState/CONNECTED :connected?
+      ChannelState/INTEREST_OPS :interest-ops})
+
+(defn channel-state-pairs [observable-channel]
+  (map-events (fn [channel-event]
+		(let [^ChannelStateEvent evnt channel-event]
+		  [(channel-state-keyword (.getState evnt))
+		   (.getValue evnt)]))
+	      (filter-events #(instance? ChannelStateEvent %)
+			     observable-channel)))
+
 ;;; Message targets
 
 (extend-protocol MessageTarget
