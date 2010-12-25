@@ -8,39 +8,36 @@
 
 (defn observer-channel-handler [observer]
   (channel-upstream-handler
-   (fn [context netty-event]
-     (if (instance? ExceptionEvent netty-event)
-       (error observer context (.getCause netty-event))
-       (do (event observer context netty-event)
-	   (when (and (instance? ChannelStateEvent netty-event)
-		      (= ChannelState/OPEN (.getState netty-event))
-		      (false? (.getValue netty-event)))
-	     (done observer context)))))))
+   (fn [context channel-event]
+     (if (instance? ExceptionEvent channel-event)
+       (error observer context (.getCause channel-event))
+       (event observer context channel-event))
+     (.sendUpstream context channel-event))))
 
-(defn add-observer-channel-handler [pipeline observer]
-  (add-to-pipeline
-   pipeline
-   "observer" (observer-channel-handler observer)))
-
-(defn stateful-pipeline-factory [init-fn handler-fn pipeline-factory-fn]
-  (channel-pipeline-factory
-   #(let [state (init-fn)]
-      (add-to-pipeline
-       (pipeline-factory-fn)
-       "state-handler" (channel-upstream-handler
-			(partial handler-fn state))))))
+(defn messages [observable-channel]
+  (map-events #(.getMessage %)
+	      (filter-events #(instance? MessageEvent %)
+			     observable-channel)))
 
 ;;; Message targets
 
 (extend-protocol MessageTarget
   Channel
-  (send! [this message] (Channels/write this message))
-  ChannelHandlerContext
-  (send! [this message] (Channels/write (.getChannel this) message)))
+  (send! [this message] (Channels/write this message)))
 
-;;; Observable futures
+;;; Observable channels & futures
 
 (extend-protocol Observable
+  Channel
+  (subscribe [channel observer]
+	     (let [key (name (gensym "observer-channel-handler"))
+		   handler (observer-channel-handler observer)
+		   pipeline (.getPipeline channel)
+		   listener (channel-future-listener (fn [_] (done observer channel)))]
+	       (.addLast pipeline key handler)
+	       (.addListener (.getCloseFuture channel) listener)
+	       (fn [] (.remove pipeline key)
+		 (.removeListener listener))))
   ChannelFuture
   (subscribe [channel-future observer]
              (let [listener (channel-future-listener #(done observer %))]
