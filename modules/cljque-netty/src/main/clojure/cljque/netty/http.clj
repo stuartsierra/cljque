@@ -5,8 +5,9 @@
 
 (defn default-http-pipeline
   "Returns a simple ChannelPipeline which encodes/decodes HTTP
-  requests and responses. An HTTP request may have a maximum size of
-  10 MB. Compression is handled automatically."
+  requests and responses. Automatically aggregates chunked HTTP
+  requests, which may have a maximum size of 10 MB. Compression is
+  handled automatically."
   []
   (pipeline
    "http-decode" (HttpRequestDecoder.)
