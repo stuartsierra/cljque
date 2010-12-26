@@ -176,7 +176,9 @@
      (when (and (instance? ChannelStateEvent event)
 		(= ChannelState/OPEN (.getState event))
 		(.getValue event))
-       (.add channel-group (.getChannel event)))
+       (let [channel (.getChannel event)]
+	 (.add channel-group (.getChannel event))
+	 (.remove (.getPipeline channel) "channel-group-handler")))
      (.sendUpstream context event))))
 
 (defn add-channel-group-handler
