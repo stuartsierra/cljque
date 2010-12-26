@@ -170,7 +170,11 @@
   [bootstrap host port]
   (.connect bootstrap (InetSocketAddress. host port)))
 
-(defn channel-group-handler [channel-group]
+(defn channel-group-handler
+  "Returns a ChannelUpstreamHandler which adds a newly-opened Channel
+  to the given ChannelGroup and then removes itself from the
+  ChannelPipeline."
+  [channel-group]
   (channel-upstream-handler
    (fn [context event]
      (when (and (instance? ChannelStateEvent event)
@@ -178,7 +182,7 @@
 		(.getValue event))
        (let [channel (.getChannel event)]
 	 (.add channel-group (.getChannel event))
-	 (.remove (.getPipeline channel) "channel-group-handler")))
+	 (.remove (.getPipeline channel) "cljque.netty.util/channel-group-handler")))
      (.sendUpstream context event))))
 
 (defn add-channel-group-handler
@@ -186,7 +190,7 @@
   newly-opened channel to the channel-group."
   [pipeline channel-group]
   (doto pipeline
-    (.addFirst "channel-group-handler"
+    (.addFirst "cljque.netty.util/channel-group-handler"
 	       (channel-group-handler channel-group))))
 
 (defn create-nio-server
