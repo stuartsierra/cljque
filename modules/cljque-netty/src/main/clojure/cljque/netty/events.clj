@@ -57,6 +57,9 @@
 
 (extend-protocol Observable
   Channel
+  ;; Subscribing to a Channel triggers `event` and `error` as by
+  ;; observer-channel-handler and additionally triggers `done` when
+  ;; the Channel is closed.
   (subscribe [channel observer]
 	     (let [key (name (gensym "channel-observer"))
 		   handler (observer-channel-handler observer)
@@ -66,12 +69,16 @@
 	       (.addListener (.getCloseFuture channel) listener)
 	       (fn [] (.remove pipeline key)
 		 (.removeListener listener))))
+  ;; Subscribing to a ChannelPipeline triggers `event` and `error` as
+  ;; by observer-channel-handler.
   ChannelPipeline
   (subscribe [pipeline observer]
 	     (let [key (name (gensym "pipeline-observer"))
 		   handler (observer-channel-handler observer)]
 	       (.addLast pipeline key handler)
 	       (fn [] (.remove pipeline key))))
+  ;; Subscribing to a ChannelFuture triggers `done` when the
+  ;; ChannelFuture completes.
   ChannelFuture
   (subscribe [channel-future observer]
              (let [listener (channel-future-listener #(done observer %))]
