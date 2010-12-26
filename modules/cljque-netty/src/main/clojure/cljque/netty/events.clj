@@ -7,7 +7,12 @@
 
 ;;; Observables and Netty channel events
 
-(defn observer-channel-handler [observer]
+(defn observer-channel-handler
+  "Returns a ChannelUpstreamHandler that generates events on the given
+  Observer. ExceptionEvents will trigger `error` on the Observer; all
+  other events will trigger `event`. The `done` method will never be
+  triggered. The Observable will be the Channel itself." 
+  [observer]
   (channel-upstream-handler
    (fn [context channel-event]
      (if (instance? ExceptionEvent channel-event)
@@ -15,7 +20,10 @@
        (event observer (.getChannel channel-event) channel-event))
      (.sendUpstream context channel-event))))
 
-(defn messages [observable-channel]
+(defn messages
+  "Returns an Observable which filters MessageEvents from the
+  Observable and extracts the message object as the event."
+  [observable-channel]
   (map-events #(.getMessage %)
 	      (filter-events #(instance? MessageEvent %)
 			     observable-channel)))
@@ -26,7 +34,12 @@
       ChannelState/CONNECTED :connected?
       ChannelState/INTEREST_OPS :interest-ops})
 
-(defn channel-state-pairs [observable-channel]
+(defn channel-state-pairs
+  "Returns an Observable which filters ChannelStateEvents from the
+  Observable and transforms them into [keyword value] pairs where the
+  keyword is one of `:open?`, `:bound?`, `:connected?`, or
+  `:interest-ops`."
+  [observable-channel]
   (map-events (fn [channel-event]
 		(let [^ChannelStateEvent evnt channel-event]
 		  [(channel-state-keyword (.getState evnt))
@@ -45,7 +58,7 @@
 (extend-protocol Observable
   Channel
   (subscribe [channel observer]
-	     (let [key (name (gensym "observer-channel-handler"))
+	     (let [key (name (gensym "channel-observer"))
 		   handler (observer-channel-handler observer)
 		   pipeline (.getPipeline channel)
 		   listener (channel-future-listener (fn [_] (done observer channel)))]
@@ -55,7 +68,7 @@
 		 (.removeListener listener))))
   ChannelPipeline
   (subscribe [pipeline observer]
-	     (let [key (name (gensym "observer-channel-handler"))
+	     (let [key (name (gensym "pipeline-observer"))
 		   handler (observer-channel-handler observer)]
 	       (.addLast pipeline key handler)
 	       (fn [] (.remove pipeline key))))
