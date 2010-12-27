@@ -51,7 +51,12 @@
 
 (extend-protocol MessageTarget
   Channel
-  (send! [this message] (Channels/write this message)))
+  (send! [channel message] (Channels/write channel message))
+  ChannelFuture
+  (send! [channel-future message]
+	 (add-channel-future-listener
+	  channel-future
+	  (fn [cf] (send! (.getChannel cf) message)))))
 
 ;;; Observable channels & futures
 
