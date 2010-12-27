@@ -221,9 +221,9 @@
   [host port pipeline-factory-fn]
   (let [bootstrap (nio-client-bootstrap)]
     (set-channel-pipeline-factory bootstrap pipeline-factory-fn)
-    (let [client-channel (connect bootstrap host port)]
+    (let [client-channel-future (connect bootstrap host port)]
       {:bootstrap bootstrap
-       :channel client-channel})))
+       :channel-future client-channel-future})))
 
 (defn shutdown-server
   "Synchronously shuts down a server, given the map returned by
