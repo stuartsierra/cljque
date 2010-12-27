@@ -3,30 +3,6 @@
 
 (import-netty)
 
-(defn http-server-pipeline
-  "Returns a simple ChannelPipeline for use in an HTTP
-  server. Encodes/decodes HTTP requests and responses. Automatically
-  aggregates chunked HTTP requests, which may have a maximum size of
-  10 MB. Compression is handled automatically."
-  []
-  (pipeline
-   "http-codec" (HttpServerCodec.)
-   "http-aggregate" (HttpChunkAggregator. 10485760)
-   "http-compress" (HttpContentCompressor.)
-   "netty-log" (LoggingHandler.)))
-
-(defn http-client-pipeline
-  "Returns a simple ChannelPipeline for use in an HTTP
-  client. Encodes/decodes HTTP requests and responses. Automatically
-  aggregates chunked HTTP responses, which may have a maximum size of
-  10 MB. Compression is handled automatically."
-  []
-  (pipeline
-   "http-codec" (HttpClientCodec.)
-   "http-decompress" (HttpContentDecompressor.)
-   "http-aggregate" (HttpChunkAggregator. 10485760)
-   "netty-log" (LoggingHandler.)))
-
 (defn headers-map [^HttpMessage http-message]
   (reduce (fn [m header-name]
 	    (let [values (.getHeaders http-message header-name)]
@@ -38,6 +14,12 @@
 
 (defn response-map [^HttpResponse r]
   {:status (.getCode (.getStatus r))
+   :headers (headers-map r)
+   :body (.getContent r)})
+
+(defn request-map [^HttpRequest r]
+  {:uri (.getUri r)
+   :method (-> r .getMethod .getName .toLowerCase keyword)
    :headers (headers-map r)
    :body (.getContent r)})
 
@@ -60,10 +42,9 @@
   (doseq [[header-name value] headers]
     (.setHeader m header-name value)))
 
-(defn set-netty-body [^HttpMessage m body]
+(defn set-netty-body [^HttpMessage m body options]
   {:pre [(or (nil? body) (string? body))]}
-  (when body
-    (.setContent m (ChannelBuffers/copiedBuffer body CharsetUtil/UTF_8))))
+  (.setContent m (channel-buffer body options)))
 
 (defn netty-http-request [options]
   (let [{:keys [method protocol-version uri headers body]
@@ -77,4 +58,79 @@
 	    (netty-http-method method)
 	    uri)
       (set-netty-headers headers)
+      (set-netty-body body options))))
+
+(defn netty-http-response [options]
+  (let [{:keys [status protocol-version headers body]
+	 :or {protocol-version "1.1"
+	      method :get
+	      status 200
+	      headers {}
+	      body nil}} options]
+    (doto (DefaultHttpResponse.
+	    (netty-protocol-version protocol-version)
+	    (HttpResponseStatus/valueOf status))
+      (set-netty-headers headers)
       (set-netty-body body))))
+
+(defn http-server-pipeline
+  "Returns a simple ChannelPipeline for use in an HTTP
+  server. Encodes/decodes HTTP requests and responses to/from Clojure
+  maps. Automatically aggregates chunked HTTP requests, which may have
+  a maximum size of 10 MB. Compression is handled automatically."
+  []
+  (pipeline
+   "http-codec" (HttpServerCodec.)
+   "http-aggregate" (HttpChunkAggregator. 10485760)
+   "http-compress" (HttpContentCompressor.)
+   "request-map" (decoder request-map)
+   "netty-http-response" (encoder netty-http-response)
+   "netty-log" (LoggingHandler.)))
+
+(defn http-client-pipeline
+  "Returns a simple ChannelPipeline for use in an HTTP
+  client. Encodes/decodes HTTP requests and responses to/from Clojure
+  maps. Automatically aggregates chunked HTTP responses, which may
+  have a maximum size of 10 MB. Compression is handled automatically."
+  []
+  (pipeline
+   "http-codec" (HttpClientCodec.)
+   "http-decompress" (HttpContentDecompressor.)
+   "http-aggregate" (HttpChunkAggregator. 10485760)
+   "netty-http-request" (encoder netty-http-request)
+   "response-map" (decoder response-map)
+   "netty-log" (LoggingHandler.)))
+
+(def content-type-string
+     {:css "text/css"
+      :csv "text/csv"
+      :html "text/html"
+      :text "text/plain"
+
+      :gif "image/gif"
+      :jpeg "image/jpeg"
+      :png "image/png"
+      :svg "image/svg+xml"
+      :tiff "image/tiff"
+
+      :form "application/x-www-form-urlencoded"
+      :multipart-form "multipart/form-data"
+
+      :javascript "application/javascript"
+      :json "application/json"
+      :pdf "application/pdf"
+      :postscript "application/postscript"
+      :soap "application/soap+xml"
+      :xhtml "application/xhtml+xml"
+      :xml "application/xml"
+      :zip "application/zip"})
+
+(defn add-content-type
+  ([response-map content-type]
+     (add-content-type content-type "UTF-8"))
+  ([response-map content-type charset]
+     (assoc response-map
+       :content-type (if (keyword? content-type)
+		       (content-type-string content-type)
+		       content-type)
+       :charset charset)))
