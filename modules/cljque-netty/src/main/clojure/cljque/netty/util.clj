@@ -1,7 +1,9 @@
 (ns cljque.netty.util
   "Convenience functions for working with Netty from Clojure."
   (:use [clojure.java.io :only (reader resource)])
-  (:import (java.net InetSocketAddress)))
+  (:import (java.net InetSocketAddress)
+	   (java.nio ByteOrder)
+	   (java.nio.charset Charset)))
 
 ;;; Class imports
 
@@ -14,6 +16,37 @@
 	   (doall (map symbol (line-seq r))))))
 
 (import-netty)
+
+;;; Channel buffers
+
+(defn channel-buffer-string [^ChannelBuffer cb & options]
+  (let [{:keys [charset]
+	 :or {charset "UTF-8"}} options]
+    (.toString cb (Charset/forName charset))))
+
+(defprotocol ChannelBufferCoercion
+  (make-channel-buffer [this options] "Converts this object into a Netty ChannelBuffer"))
+
+(def netty-byte-order
+     {:big-endian ByteOrder/BIG_ENDIAN
+      :little-endian ByteOrder/LITTLE_ENDIAN})
+
+(extend-protocol ChannelBufferCoercion
+  nil
+  (make-channel-buffer [this options] ChannelBuffers/EMPTY_BUFFER)
+
+  CharSequence
+  (make-channel-buffer
+   [this options]
+   (let [{:keys [charset byte-order]
+	  :or {charset "UTF-8"
+	       byte-order :big-endian}} options]
+     (ChannelBuffers/copiedBuffer (netty-byte-order byte-order)
+				  this
+				  (Charset/forName charset)))))
+
+(defn channel-buffer [x & options]
+  (make-channel-buffer x (into array-map options)))
 
 ;;; Channel handlers
 
