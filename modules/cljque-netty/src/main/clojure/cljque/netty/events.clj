@@ -86,6 +86,10 @@
   ;; ChannelFuture completes.
   ChannelFuture
   (subscribe [channel-future observer]
-             (let [listener (channel-future-listener #(done observer %))]
+             (let [listener (channel-future-listener
+			     (fn [channel-future]
+			       (if (.isSuccess channel-future)
+				 (done observer channel-future)
+				 (error observer channel-future (.getCause channel-future)))))]
                (.addListener channel-future listener)
                (fn [] (.removeListener channel-future listener)))))
