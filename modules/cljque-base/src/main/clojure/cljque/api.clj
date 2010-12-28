@@ -6,7 +6,7 @@
   (event [observer observable event]
     "Called when observable generates an event.")
   (done [observer observable]
-    "Called when observable o is finished generating events.")
+    "Called when observable is finished generating events.")
   (error [observer observable e]
     "Called when observable throws an exception e."))
 
