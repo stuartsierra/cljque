@@ -11,3 +11,16 @@ be found in the file LICENSE.html at the root of this distribution.
 By using this software in any fashion, you are agreeing to be bound by
 the terms of this license.  You must not remove this notice, or any
 other, from this software.
+
+
+Inspirations / References
+========================================
+
+[Netty](http://www.jboss.org/netty)
+
+[Reactive Extensions for .NET (Rx)](http://msdn.microsoft.com/en-us/devlabs/ee794896)
+
+[101 Rx Samples](http://rxwiki.wikidot.com/101samples)
+
+[Rx Design Guidelines](http://blogs.msdn.com/b/rxteam/archive/2010/10/28/rx-design-guidelines.aspx)
+
