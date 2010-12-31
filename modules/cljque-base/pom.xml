@@ -8,6 +8,7 @@
   <artifactId>cljque-base</artifactId>
   <version>${cljque.version}</version>
   <name>${artifactId}</name>
+  <packaging>clojure</packaging>
   <parent>
     <groupId>com.stuartsierra</groupId>
     <artifactId>cljque-parent</artifactId>
