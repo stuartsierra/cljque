@@ -6,7 +6,57 @@
   ;; send an event containing all those events
 ;;)
 
+;;; Convenience subscription models
+
+(deftype FunctionObserver [event-fn done-fn error-fn]
+  Observer
+  (event [observer observable evnt] (event-fn evnt))
+  (done [observer observable] (done-fn))
+  (error [observer observable err] (error-fn err)))
+
+(defn subscribe-fns
+  "Subscribes to messages from observable. When an `event` message is received,
+  invokes event-fn wih one argument, the event. When a `done` message
+  is received, invokes done-fn with no arguments. When an exception is
+  received, invokes error-fn with one argument, the exception."
+  ([observable event-fn error-fn]
+     (subscribe-fns observable event-fn (constantly nil) error-fn))
+  ([observable event-fn error-fn done-fn]
+     (subscribe observable (FunctionObserver. event-fn done-fn error-fn))))
+
+(defn subscribe-events
+  "Subscribes only to `event` messages from observable. When a message
+  is received, invokes f with one argument, the event. Silently
+  discards `done` messages, rethrows errors on the invoking thread."
+  [observable f]
+  (subscribe observable (reify Observer
+			       (event [_ _ event] (f event))
+			       (done [_ _])
+			       (error [_ _ err] (throw err)))))
+
+(defn subscribe-errors
+  "Subscribes only to `error` messages from observable. When a message
+  is received, invokes f with one argument, the exception. Silently
+  discards `done` and `event` messages."
+  [observable f]
+  (subscribe observable (reify Observer
+			       (event [_ _ _])
+			       (done [_ _])
+			       (error [_ _ err] (f err)))))
+
+(defn subscribe-done
+  "Subscribes only to the `done` message from observable. When that
+  message is received, invokes f with no arguments. Silently `event`
+  messages, rethrows errors on the invoking thread."
+  [observable f]
+  (subscribe observable (reify Observer
+			       (event [_ _ _])
+			       (done [_ _] (f))
+			       (error [_ _ err] (throw err)))))
+
 ;;; Reusable Observable implementations
+
+(deftype SeqObservableExceptionContainer [exception])
 
 (defn seq-observable
   "Returns a sequence of events from an observable.
@@ -18,15 +68,16 @@
 	consumer (fn this []
 		   (lazy-seq
 		    (let [x (.take q)]
-		      (when (not= x terminator)
-			(cons x (this))))))]
+		      (cond
+		       (instance? SeqObservableExceptionContainer x) (throw (. x exception))
+		       (not= x terminator) (cons x (this))))))]
     (subscribe o (reify Observer
 			(event [this observed event]
 			       (.put q event))
 			(done [this observed]
 			      (.put q terminator))
 			(error [this observed e]
-			       (throw e))))
+			       (.put q (SeqObservableExceptionContainer. e)))))
     (consumer)))
 
 (defn observe-seq
