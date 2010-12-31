@@ -24,6 +24,7 @@
 	 :or {charset "UTF-8"}} options]
     (.toString cb (Charset/forName charset))))
 
+;; Netty already has ChannelBufferFactory so I can't call it that
 (defprotocol ChannelBufferCoercion
   (make-channel-buffer [this options] "Converts this object into a Netty ChannelBuffer"))
 
