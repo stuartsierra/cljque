@@ -32,6 +32,30 @@
 			       (event observer iref new)))
 		  (fn [] (remove-watch this-ref key))))})
 
+;;; Futures are Observable, but waiting for a result will occupy a
+;;; thread in addition to the Future's thread
+
+(defn- observe-future [fut observer]
+  (try (event observer fut (.get fut))
+       (catch Throwable t
+	 (error observer fut t))
+       (finally 
+	(done observer fut))))
+
+(extend-protocol Observable
+  java.util.concurrent.Future
+  (subscribe [this observer]
+	     (if (.isDone this)
+	       ;; If already done, generate events immediately
+	       (do (observe-future this)
+		   (constantly nil))
+	       ;; If not done, wait for completion in another Future
+	       (let [subscribed? (atom true)]
+		 (future (let [value (.get this)]
+			   (when subscribed?
+			     (observe-future this observer))))
+		 (fn [] (reset! subscribed? false))))))
+
 ;;; An Agent can wrap a MessageTarget and forward to it
 
 (extend clojure.lang.Agent
