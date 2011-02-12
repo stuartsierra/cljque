@@ -6,6 +6,44 @@
   ;; send an event containing all those events
 ;;)
 
+(defn gather-events [& observables]
+  (reify Observable
+    (subscribe [this observer]
+      (let [unset (Object.)
+	    results (atom (vec (repeat (count observables) unset)))
+	    closers (doall
+		     (map-indexed
+		      (fn [i obs]
+			(subscribe obs
+				   (reify Observer
+				     (error [this observable err]
+				       (swap! results conj unset)
+				       (error observer observables err))
+				     (done [this observable] nil)
+				     (event [this observable evnt]
+				       (when (every? #(not= unset %)
+						     (swap! results assoc i evnt))
+					 (event observer observables @results))))))
+		      observables))]
+	(fn [] (doseq [c closers] (c)))))))
+
+(defn any-event [& observables]
+  (reify Observable
+    (subscribe [this observer]
+      (let [subscribed? (atom true)
+	    closers (doall
+		     (map-indexed
+		      (fn [i obs]
+			(subscribe obs
+				   (reify Observer
+				     (error [this observable err]
+				       (error observer observables err))
+				     (done [this observable] nil)
+				     (event [this observable evnt]
+				       (event observer observable evnt)))))
+		      observables))]
+	(fn [] (doseq [c closers] (c)))))))
+
 ;;; Convenience subscription models
 
 (deftype FunctionObserver [event-fn done-fn error-fn]
@@ -166,22 +204,22 @@
   [n o]
   (reify Observable
 	 (subscribe [this observer]
-		    (let [event-count (atom 0)
-			  counter (fn [] (swap! event-count (fn [c] (when (and c (<= c n)) (inc c)))))]
-		      (subscribe o
-				 (reify Observer
-					(event [this observable value]
-					       (when-let [c (counter)]
-						 (if (= c n)
-						   (do (event observer observable value)
-						       (done observer observable))
-						   (event observer observable value))))
-					(done [this observable]
-					      (when (counter)
-						(done observer observable)))
-					(error [this observable e]
-					       (error observer observable e))))
-		      (fn [] (reset! event-count false))))))
+	   (let [counter (atom 0)]
+	     (subscribe o
+			(reify Observer
+			  (event [this observable value]
+			    (when (= n (swap! counter
+					      (fn [state]
+						(when (< state n)
+						  (event observer observable value))
+						(inc state))))
+			      (done observer observable)))
+			  (done [this observable]
+			    (when (< @counter n)
+			      (done observer observable)))
+			  (error [this observable e]
+			    (error observer observable e))))))))
+
 
 (defn map-events
   "Returns an Observable which wraps Observable o by applying f to the
