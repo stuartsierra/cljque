@@ -45,16 +45,16 @@
 (extend-protocol Observable
   java.util.concurrent.Future
   (subscribe [this observer]
-	     (if (.isDone this)
-	       ;; If already done, generate events immediately
-	       (do (observe-future this)
-		   (constantly nil))
-	       ;; If not done, wait for completion in another Future
-	       (let [subscribed? (atom true)]
-		 (future (let [value (.get this)]
-			   (when subscribed?
-			     (observe-future this observer))))
-		 (fn [] (reset! subscribed? false))))))
+    (if (.isDone this)
+      ;; If already done, generate events immediately
+      (do (observe-future this)
+	  (constantly nil))
+      ;; If not done, wait for completion in another Future
+      (let [subscribed? (atom true)]
+	(future (let [value (.get this)]
+		  (when subscribed?
+		    (observe-future this observer))))
+	(fn [] (reset! subscribed? false))))))
 
 ;;; An Agent can wrap a MessageTarget and forward to it
 
@@ -67,9 +67,9 @@
 
 (extend clojure.lang.IFn
   Observer
-  {:event (fn [this-fn observable event]
-	    (this-fn observable event))
-   :done (fn [this-fn observable]
-	   (this-fn observable ::done))
-   :error (fn [this-fn observable e]
+  {:on-event (fn [this-fn observable event]
+	       (this-fn observable event))
+   :on-done (fn [this-fn observable]
+	      (this-fn observable ::done))
+   :on-error (fn [this-fn observable e]
 	    (this-fn observable {::error e}))})
