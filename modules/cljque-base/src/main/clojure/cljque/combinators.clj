@@ -16,14 +16,14 @@
 		      (fn [i obs]
 			(subscribe obs
 				   (reify Observer
-				     (error [this observable err]
+				     (on-error [this observable err]
 				       (swap! results conj unset)
-				       (error observer observables err))
-				     (done [this observable] nil)
-				     (event [this observable evnt]
+				       (on-error observer observables err))
+				     (on-done [this observable] nil)
+				     (on-event [this observable evnt]
 				       (when (every? #(not= unset %)
 						     (swap! results assoc i evnt))
-					 (event observer observables @results))))))
+					 (on-event observer observables @results))))))
 		      observables))]
 	(fn [] (doseq [c closers] (c)))))))
 
@@ -36,11 +36,11 @@
 		      (fn [i obs]
 			(subscribe obs
 				   (reify Observer
-				     (error [this observable err]
-				       (error observer observables err))
-				     (done [this observable] nil)
-				     (event [this observable evnt]
-				       (event observer observable evnt)))))
+				     (on-error [this observable err]
+				       (on-error observer observables err))
+				     (on-done [this observable] nil)
+				     (on-event [this observable evnt]
+				       (on-event observer observable evnt)))))
 		      observables))]
 	(fn [] (doseq [c closers] (c)))))))
 
@@ -48,9 +48,9 @@
 
 (deftype FunctionObserver [event-fn done-fn error-fn]
   Observer
-  (event [observer observable evnt] (event-fn evnt))
-  (done [observer observable] (done-fn))
-  (error [observer observable err] (error-fn err)))
+  (on-event [observer observable evnt] (event-fn evnt))
+  (on-done [observer observable] (done-fn))
+  (on-error [observer observable err] (error-fn err)))
 
 (defn subscribe-fns
   "Subscribes to messages from observable. When an `event` message is received,
@@ -68,9 +68,9 @@
   discards `done` messages, rethrows errors on the invoking thread."
   [observable f]
   (subscribe observable (reify Observer
-			       (event [_ _ event] (f event))
-			       (done [_ _])
-			       (error [_ _ err] (throw err)))))
+			       (on-event [_ _ event] (f event))
+			       (on-done [_ _])
+			       (on-error [_ _ err] (throw err)))))
 
 (defn subscribe-errors
   "Subscribes only to `error` messages from observable. When a message
@@ -78,9 +78,9 @@
   discards `done` and `event` messages."
   [observable f]
   (subscribe observable (reify Observer
-			       (event [_ _ _])
-			       (done [_ _])
-			       (error [_ _ err] (f err)))))
+			       (on-event [_ _ _])
+			       (on-done [_ _])
+			       (on-error [_ _ err] (f err)))))
 
 (defn subscribe-done
   "Subscribes only to the `done` message from observable. When that
@@ -88,9 +88,9 @@
   messages, rethrows errors on the invoking thread."
   [observable f]
   (subscribe observable (reify Observer
-			       (event [_ _ _])
-			       (done [_ _] (f))
-			       (error [_ _ err] (throw err)))))
+			       (on-event [_ _ _])
+			       (on-done [_ _] (f))
+			       (on-error [_ _ err] (throw err)))))
 
 ;;; Reusable Observable implementations
 
@@ -110,11 +110,11 @@
 		       (instance? SeqObservableExceptionContainer x) (throw (. x exception))
 		       (not= x terminator) (cons x (this))))))]
     (subscribe o (reify Observer
-			(event [this observed event]
+			(on-event [this observed event]
 			       (.put q event))
-			(done [this observed]
+			(on-done [this observed]
 			      (.put q terminator))
-			(error [this observed e]
+			(on-error [this observed e]
 			       (.put q (SeqObservableExceptionContainer. e)))))
     (consumer)))
 
@@ -129,11 +129,11 @@
 				(when @continue
 				  (try
 				    (if-let [x (first xs)]
-				      (do (event observer this x)
+				      (do (on-event observer this x)
 					  (recur (next xs)))
-				      (done observer this))
+				      (on-done observer this))
 				    (catch Throwable t
-				      (error observer this t))))))
+				      (on-error observer this t))))))
 		      (fn [] (reset! continue false))))))
 
 (defn range-events
@@ -143,7 +143,7 @@
 		       (let [continue (atom true)]
 			 (future (loop [i 0]
 				   (when @continue
-				     (event observer this i)
+				     (on-event observer this i)
 				     (recur (inc i)))))
 			 (fn [] (reset! continue false))))))
   ([finish]
@@ -155,9 +155,9 @@
 			 (future (loop [i start]
 				   (when @continue
 				     (if (< i finish)
-				       (do (event observer this i)
+				       (do (on-event observer this i)
 					   (recur (inc i)))
-				       (done observer this)))))
+				       (on-done observer this)))))
 			 (fn [] (reset! continue true)))))))
 
 (defn once
@@ -166,8 +166,8 @@
   [value]
   (reify Observable
          (subscribe [this observer]
-		    (future (event observer this value)
-			    (done observer this))
+		    (future (on-event observer this value)
+			    (on-done observer this))
 		    (constantly nil))))
 
 (defn never
@@ -176,7 +176,7 @@
   []
   (reify Observable
 	 (subscribe [this observer]
-		    (done observer this)
+		    (on-done observer this)
 		    (constantly nil))))
 
 ;;; Wrappers
@@ -191,12 +191,12 @@
   (reify Observable
 	 (subscribe [this observer]
 		    (subscribe o (reify Observer
-					(event [this observable value]
+					(on-event [this observable value]
 					       (f observer observable value))
-					(done [this observable]
-					      (done observer observable))
-					(error [this observable e]
-					       (error observer observable e)))))))
+					(on-done [this observable]
+					      (on-done observer observable))
+					(on-error [this observable e]
+					       (on-error observer observable e)))))))
 
 (defn take-events
   "Returns an Observable which wraps Observable o and passes up to n
@@ -207,18 +207,18 @@
 	   (let [counter (atom 0)]
 	     (subscribe o
 			(reify Observer
-			  (event [this observable value]
+			  (on-event [this observable value]
 			    (when (= n (swap! counter
 					      (fn [state]
 						(when (< state n)
-						  (event observer observable value))
+						  (on-event observer observable value))
 						(inc state))))
-			      (done observer observable)))
-			  (done [this observable]
+			      (on-done observer observable)))
+			  (on-done [this observable]
 			    (when (< @counter n)
-			      (done observer observable)))
-			  (error [this observable e]
-			    (error observer observable e))))))))
+			      (on-done observer observable)))
+			  (on-error [this observable e]
+			    (on-error observer observable e))))))))
 
 
 (defn map-events
@@ -226,7 +226,7 @@
   value of each event."
   [f o]
   (handle-events (fn [observer observable value]
-		   (event observer observable (f value)))
+		   (on-event observer observable (f value)))
 		 o))
 
 (defn filter-events
@@ -235,7 +235,7 @@
   [pred o]
   (handle-events (fn [observer observable value]
 		   (when (pred value)
-		     (event observer observable value)))
+		     (on-event observer observable value)))
 		 o))
 
 (defn watch-events
@@ -245,7 +245,7 @@
   [o]
   (let [values (atom [nil ::unset])]
     (handle-events (fn [observer observable value]
-		     (event observer observable
+		     (on-event observer observable
 			    (swap! values (fn [[older old]] [old value]))))
 		   o)))
 
@@ -256,7 +256,7 @@
   (let [o (watch-events o)]
     (handle-events (fn [observer observable [old new]]
 		     (when-not (= old new)
-		       (event observer observable new)))
+		       (on-event observer observable new)))
 		   o)))
 
 (defn delta-events
@@ -267,7 +267,7 @@
   (let [o (watch-events o)]
     (handle-events (fn [observer observable [old new]]
 		     (when-not (= old ::unset)
-		       (event observer observable (f new old))))
+		       (on-event observer observable (f new old))))
 		   o)))
 
 (defn distinct-events
@@ -280,7 +280,7 @@
 				(let [old-seen @seen]
 				  (commute seen conj value)
 				  (contains? old-seen value)))
-		       (event observer observable value)))
+		       (on-event observer observable value)))
 		   o)))
 
 (defn forward [source & targets]
@@ -288,9 +288,9 @@
   ;; Subscrib on source returns a fn, just like always.
   (subscribe source
 	     (reify Observer
-		    (event [this observed event]
+		    (on-event [this observed event]
 			   (doseq [t targets]
 			     (send! t event)))
-		    (done [this observed] nil)
-		    (error [this observed e]
+		    (on-done [this observed] nil)
+		    (on-error [this observed e]
 			   (throw e)))))

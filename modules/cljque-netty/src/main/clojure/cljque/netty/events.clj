@@ -16,8 +16,8 @@
   (channel-upstream-handler
    (fn [context channel-event]
      (if (instance? ExceptionEvent channel-event)
-       (error observer (.getChannel channel-event) (.getCause channel-event))
-       (event observer (.getChannel channel-event) channel-event))
+       (on-error observer (.getChannel channel-event) (.getCause channel-event))
+       (on-event observer (.getChannel channel-event) channel-event))
      (.sendUpstream context channel-event))))
 
 (defn messages
@@ -69,7 +69,7 @@
 	     (let [key (name (gensym "channel-observer"))
 		   handler (observer-channel-handler observer)
 		   pipeline (.getPipeline channel)
-		   listener (channel-future-listener (fn [_] (done observer channel)))]
+		   listener (channel-future-listener (fn [_] (on-done observer channel)))]
 	       (.addLast pipeline key handler)
 	       (.addListener (.getCloseFuture channel) listener)
 	       (fn [] (.remove pipeline key)
@@ -89,7 +89,7 @@
              (let [listener (channel-future-listener
 			     (fn [channel-future]
 			       (if (.isSuccess channel-future)
-				 (done observer channel-future)
-				 (error observer channel-future (.getCause channel-future)))))]
+				 (on-done observer channel-future)
+				 (on-error observer channel-future (.getCause channel-future)))))]
                (.addListener channel-future listener)
                (fn [] (.removeListener channel-future listener)))))

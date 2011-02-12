@@ -22,12 +22,12 @@
 (defn scheduled-event [value delay unit]
   (reify Observable
     (subscribe [this observer]
-      (schedule #(event observer this value)
+      (schedule #(on-event observer this value)
 		delay unit))))
 
 (defn periodic-event [value initial-delay delay unit]
   (reify Observable
     (subscribe [this observer]
-      (let [fut (schedule-periodic #(event observer this value)
+      (let [fut (schedule-periodic #(on-event observer this value)
 				   initial-delay delay unit)]
 	(fn [] (.cancel fut false))))))

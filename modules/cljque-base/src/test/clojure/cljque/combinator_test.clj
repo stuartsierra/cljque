@@ -20,9 +20,9 @@
    (let [errors (atom nil)
 	 message ((string-of (pick alphanumeric)))
 	 my-observer (reify Observer
-			    (event [_ _ _])
-			    (done [_ _])
-			    (error [_ _ err] (reset! errors err)))]
+			    (on-event [_ _ _])
+			    (on-done [_ _])
+			    (on-error [_ _ err] (reset! errors err)))]
      (subscribe (observe-seq (lazy-seq (throw (Exception. message)))) my-observer)
      (Thread/sleep 100)
      (expect (contains-message? @errors message)))))

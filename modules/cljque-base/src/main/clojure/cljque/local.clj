@@ -31,7 +31,7 @@
 	 (io!)
 	 (debug "Sending to" address (pr-str message))
 	 (doseq [[k observer] (get @listeners address)]
-	   (future (event observer this message)))))
+	   (future (on-event observer this message)))))
 
 (defn local [address]
   (LocalAddress. address))
