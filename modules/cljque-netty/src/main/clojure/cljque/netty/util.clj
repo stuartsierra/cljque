@@ -5,6 +5,22 @@
 	   (java.nio ByteOrder)
 	   (java.nio.charset Charset)))
 
+;;; Helper functions
+
+(defn strict-get
+  "Returns value of key k from map m, throws an exception if m does
+  not contain k."
+  [m k]
+  (if-let [e (find m k)]
+    (val e)
+    (throw (IllegalArgumentException. (str "Key not found: " k)))))
+
+(defn strict-map-fn
+  "Returns a fn that takes a key and returns the value of that key in
+  map m, throwing an exception if it does not exist."
+  [m]
+  (fn [k] (strict-get m k)))
+
 ;;; Class imports
 
 (defmacro import-netty
@@ -29,8 +45,8 @@
   (make-channel-buffer [this options] "Converts this object into a Netty ChannelBuffer"))
 
 (def netty-byte-order
-     {:big-endian ByteOrder/BIG_ENDIAN
-      :little-endian ByteOrder/LITTLE_ENDIAN})
+  (strict-map-fn {:big-endian ByteOrder/BIG_ENDIAN
+                  :little-endian ByteOrder/LITTLE_ENDIAN}))
 
 (extend-protocol ChannelBufferCoercion
   nil

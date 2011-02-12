@@ -24,19 +24,19 @@
    :body (.getContent r)})
 
 (def netty-http-method
-     {:get HttpMethod/GET
-      :post HttpMethod/POST
-      :put HttpMethod/PUT
-      :delete HttpMethod/DELETE
-      :head HttpMethod/HEAD
-      :options HttpMethod/OPTIONS
-      :patch HttpMethod/PATCH
-      :trace HttpMethod/TRACE
-      :connect HttpMethod/CONNECT})
+  (strict-map-fn {:get HttpMethod/GET
+                  :post HttpMethod/POST
+                  :put HttpMethod/PUT
+                  :delete HttpMethod/DELETE
+                  :head HttpMethod/HEAD
+                  :options HttpMethod/OPTIONS
+                  :patch HttpMethod/PATCH
+                  :trace HttpMethod/TRACE
+                  :connect HttpMethod/CONNECT}))
 
 (def netty-protocol-version
-     {"1.1" HttpVersion/HTTP_1_1
-      "1.0" HttpVersion/HTTP_1_0})
+  (strict-map-fn {"1.1" HttpVersion/HTTP_1_1
+                  "1.0" HttpVersion/HTTP_1_0}))
 
 (defn set-netty-headers [^HttpMessage m headers]
   (doseq [[header-name value] headers]
@@ -102,28 +102,29 @@
    "netty-log" (LoggingHandler.)))
 
 (def content-type-string
-     {:css "text/css"
-      :csv "text/csv"
-      :html "text/html"
-      :text "text/plain"
+  (strict-map-fn
+   {:css "text/css"
+    :csv "text/csv"
+    :html "text/html"
+    :text "text/plain"
 
-      :gif "image/gif"
-      :jpeg "image/jpeg"
-      :png "image/png"
-      :svg "image/svg+xml"
-      :tiff "image/tiff"
+    :gif "image/gif"
+    :jpeg "image/jpeg"
+    :png "image/png"
+    :svg "image/svg+xml"
+    :tiff "image/tiff"
 
-      :form "application/x-www-form-urlencoded"
-      :multipart-form "multipart/form-data"
+    :form "application/x-www-form-urlencoded"
+    :multipart-form "multipart/form-data"
 
-      :javascript "application/javascript"
-      :json "application/json"
-      :pdf "application/pdf"
-      :postscript "application/postscript"
-      :soap "application/soap+xml"
-      :xhtml "application/xhtml+xml"
-      :xml "application/xml"
-      :zip "application/zip"})
+    :javascript "application/javascript"
+    :json "application/json"
+    :pdf "application/pdf"
+    :postscript "application/postscript"
+    :soap "application/soap+xml"
+    :xhtml "application/xhtml+xml"
+    :xml "application/xml"
+    :zip "application/zip"}))
 
 (defn add-content-type
   ([response-map content-type]

@@ -29,10 +29,10 @@
 			     observable-channel)))
 
 (def channel-state-keyword
-     {ChannelState/OPEN :open?
-      ChannelState/BOUND :bound?
-      ChannelState/CONNECTED :connected?
-      ChannelState/INTEREST_OPS :interest-ops})
+  (strict-map-fn {ChannelState/OPEN :open?
+                  ChannelState/BOUND :bound?
+                  ChannelState/CONNECTED :connected?
+                  ChannelState/INTEREST_OPS :interest-ops}))
 
 (defn channel-state-pairs
   "Returns an Observable which filters ChannelStateEvents from the
