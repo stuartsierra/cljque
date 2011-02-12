@@ -1,67 +1,6 @@
 (ns cljque.combinators
   (:use cljque.api))
 
-;;(defn latch-events [obs]
-  ;; when all observables have sent an event
-  ;; send an event containing all those events
-;;)
-
-(defn gather-events
-  "Returns on Observable which waits for all observables to signal an
-  event, then generates one event whose value a vector of all the
-  events.  If any observable signals an error or done, passes that
-  through and aborts."
-  [& observables]
-  (reify Observable
-    (subscribe [this observer]
-      (let [unsub-all (promise)
-	    unset (Object.)
-	    results (atom (vec (repeat (count observables) unset)))
-	    unsubs (doall
-		    (map-indexed
-		     (fn [i obs]
-		       (subscribe
-			obs
-			(reify Observer
-			  (on-event [_ observable evnt]
-			    (when (every? #(not= unset %)
-					  (swap! results update-in [i]
-						 #(if (= unset %) evnt %)))
-			      (@unsub-all)
-			      (on-event observer this @results)))
-			  (on-done [_ observable]
-			    (@unsub-all)
-			    (on-done observer this))
-			  (on-error [_ observable err]
-			    (@unsub-all)
-			    (on-error observer this err)))))
-		     observables))]
-	(deliver unsub-all (fn [] (doseq [c unsubs] (c))))
-	@unsub-all))))
-
-(defn any-event
-  "Returns an Observable which relays events and errors from all given
-  observables.  Signals done when all observables have signaled done."
-  [& observables]
-  (reify Observable
-    (subscribe [this observer]
-      (let [dones (atom (vec (repeat (count observables) false)))
-	    closers (doall
-		     (map-indexed
-		      (fn [i obs]
-			(subscribe
-			 obs
-			 (reify Observer
-			   (on-error [_ observable err]
-			     (on-error observer this err))
-			   (on-done [_ observable]
-			     (when (every? identity (swap! dones assoc i true))
-			       (on-done observer this)))
-			   (on-event [_ observable evnt]
-			     (on-event observer this evnt)))))
- 		      observables))]
-	(fn [] (doseq [c closers] (c)))))))
-
 ;;; Convenience subscription models
 
 (deftype FunctionObserver [event-fn done-fn error-fn]
@@ -300,6 +239,62 @@
 				  (contains? old-seen value)))
 		       (on-event observer observable value)))
 		   o)))
+
+(defn gather-events
+  "Returns on Observable which waits for all observables to signal an
+  event, then generates one event whose value a vector of all the
+  events.  If any observable signals an error or done, passes that
+  through and aborts."
+  [& observables]
+  (reify Observable
+    (subscribe [this observer]
+      (let [unsub-all (promise)
+	    unset (Object.)
+	    results (atom (vec (repeat (count observables) unset)))
+	    unsubs (doall
+		    (map-indexed
+		     (fn [i obs]
+		       (subscribe
+			obs
+			(reify Observer
+			  (on-event [_ observable evnt]
+			    (when (every? #(not= unset %)
+					  (swap! results update-in [i]
+						 #(if (= unset %) evnt %)))
+			      (@unsub-all)
+			      (on-event observer this @results)))
+			  (on-done [_ observable]
+			    (@unsub-all)
+			    (on-done observer this))
+			  (on-error [_ observable err]
+			    (@unsub-all)
+			    (on-error observer this err)))))
+		     observables))]
+	(deliver unsub-all (fn [] (doseq [c unsubs] (c))))
+	@unsub-all))))
+
+(defn any-event
+  "Returns an Observable which relays events and errors from all given
+  observables.  Signals done when all observables have signaled done."
+  [& observables]
+  (reify Observable
+    (subscribe [this observer]
+      (let [dones (atom (vec (repeat (count observables) false)))
+	    closers (doall
+		     (map-indexed
+		      (fn [i obs]
+			(subscribe
+			 obs
+			 (reify Observer
+			   (on-error [_ observable err]
+			     (on-error observer this err))
+			   (on-done [_ observable]
+			     (when (every? identity (swap! dones assoc i true))
+			       (on-done observer this)))
+			   (on-event [_ observable evnt]
+			     (on-event observer this evnt)))))
+ 		      observables))]
+	(fn [] (doseq [c closers] (c)))))))
 
 (defn forward [source & targets]
   ;; How do you unsubscribe this?
