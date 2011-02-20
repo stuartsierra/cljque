@@ -16,11 +16,13 @@
 ;; clojure.core/binding-conveyor-fn
 
 (defn delay-send [d units agnt action & args]
-  (.schedule (force executor)
-             (bound-fn* #(apply send agnt action args))
-             d (time-unit units)))
+  (let [fut (.schedule (force executor)
+                       (bound-fn* #(apply send agnt action args))
+                       d (time-unit units))]
+    (fn [] (.cancel fut false))))
 
 (defn periodic-send [init d units agnt action & args]
-  (.scheduleAtFixedRate (force executor)
-                        (bound-fn* #(apply send agnt action args))
-                        init d (time-unit units)))
+  (let [fut (.scheduleAtFixedRate (force executor)
+                                  (bound-fn* #(apply send agnt action args))
+                                  init d (time-unit units))]
+    (fn [] (.cancel fut false))))
