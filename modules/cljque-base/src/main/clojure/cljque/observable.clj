@@ -1,6 +1,7 @@
 (ns cljque.observable
   (:use [cljque.schedule :only (delay-send periodic-send)] )
-  (:refer-clojure :exclude (concat delay drop filter first map merge range rest take)))
+  (:refer-clojure :exclude (concat cycle delay distinct drop filter
+                            first map merge range rest take)))
 
 (defprotocol Observable
   (observe [this agnt on-message on-done]
@@ -72,7 +73,7 @@
                (fn [state src] (.put q ::done)))
     (consumer)))
 
-;;; Combinators
+;;; One-time event generators
 
 (defn value [x]
   (reify Observable
@@ -87,6 +88,8 @@
       (send agnt on-done this)
       (constantly nil))))
 
+;;; "Push" sequence API
+
 (defn range
   ([]
      (reify Observable
@@ -95,9 +98,9 @@
            (send a
                  (fn thisfn [state]
                    (when state
-                    (send agnt on-message this state)
-                    (send *agent* thisfn)
-                    (inc state))))
+                     (send agnt on-message this state)
+                     (send *agent* thisfn)
+                     (inc state))))
            (fn [] (send a (constantly false)))))))
   ([end]
      (range 0 end 1))
@@ -149,21 +152,81 @@
 (defn drop [n source]
   (reify Observable
     (observe [this agnt on-message on-done]
-      (let [unsub (promise)]
-        (deliver unsub
-                 (subscribe source (agent n)
+      (let [unsub (subscribe source (agent n)
                             (fn [state src message]
                               (if (zero? state)
-                                (send agnt on-message this message)
+                                (do (send agnt on-message this message)
+                                    state)
                                 (dec state)))
-                            (fn [_ _] (send agnt on-done this))))
-        (fn [] (@unsub))))))
+                            (fn [_ _] (send agnt on-done this) nil))]
+        (fn [] (unsub))))))
 
 (defn first [source]
   (take 1 source))
 
 (defn rest [source]
   (drop 1 source))
+
+(defn concat [& sources]
+  (reify Observable
+    (observe [this agnt on-message on-done]
+      (let [a (agent (clojure.core/next sources))]
+        (letfn [(on-msg [state src message]
+                  (send agnt on-message this message)
+                  state)
+                (on-dn [state src]
+                  (if state
+                    (do (subscribe (clojure.core/first state) a on-msg on-dn)
+                        (clojure.core/next state))
+                    (send agnt on-done this)))]
+          (subscribe (clojure.core/first sources) a on-msg on-dn))))))
+
+(defn distinct [source]
+  (reify Observable
+    (observe [this agnt on-message on-done]
+      (subscribe source (agent #{})
+                 (fn [state src message]
+                   (if (contains? state message)
+                     state
+                     (do (send agnt on-message src message)
+                         (conj state message))))
+                 (fn [state src]
+                   (send agnt on-done src)
+                   nil)))))
+
+(defn cycle [coll]
+  (reify Observable
+    (observe [this agnt on-message on-done]
+      (let [v (vec coll)
+            c (count coll)
+            a (agent 0)]
+        (send a (fn thisfn [state]
+                  (when state
+                   (send agnt on-message this (nth v state))
+                   (send *agent* thisfn)
+                   (mod (inc state) c))))
+        (fn [] (send a (constantly false)))))))
+
+;;; Changes in value
+
+(defn transitions [source]
+  (reify Observable
+    (observe [this agnt on-message on-done]
+      (subscribe source (agent ::unset)
+                 (fn [state src message]
+                   (send agnt on-message src [state message])
+                   message)
+                 (fn [state src]
+                   (send agnt on-done this)
+                   nil)))))
+
+(defn changes [source]
+  (filter #(apply not= %) (transitions source)))
+
+(defn new-values [source]
+  (map second (changes source)))
+
+;;; Combining message streams
 
 (defn gather [& sources]
   (reify Observable
@@ -209,19 +272,7 @@
                      sources))]
         (fn [] (doseq [u unsubs] (u)))))))
 
-(defn concat [& sources]
-  (reify Observable
-    (observe [this agnt on-message on-done]
-      (let [a (agent (clojure.core/next sources))]
-        (letfn [(on-msg [state src message]
-                  (send agnt on-message this message)
-                  state)
-                (on-dn [state src]
-                  (if state
-                    (do (subscribe (clojure.core/first state) a on-msg on-dn)
-                        (clojure.core/next state))
-                    (send agnt on-done this)))]
-          (subscribe (clojure.core/first sources) a on-msg on-dn))))))
+;;; Scheduled messages
 
 (defn delay [d units message]
   (reify Observable
