@@ -57,9 +57,9 @@
                        (= x ::done) nil
                        (instance? ObservableError x) (throw (.e x))
                        :else (cons x (thisfn))))))]
-    (subscribe observable
-               (reify Observer
-                 (message [this m] (.put q m))
-                 (done [this] (.put q ::done))
-                 (error [this e] (.put q (ObservableError. e)))))
+    (observe observable
+             (reify Observer
+               (message [this m] (.put q m))
+               (done [this] (.put q ::done))
+               (error [this e] (.put q (ObservableError. e)))))
     (consumer)))
