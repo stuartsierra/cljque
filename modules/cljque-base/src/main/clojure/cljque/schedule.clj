@@ -1,33 +1,28 @@
 (ns cljque.schedule
-  (:use cljque.api)
   (:import (java.util.concurrent Executors TimeUnit)))
 
-(def executor (Executors/newScheduledThreadPool 1))
+(def executor (delay (Executors/newScheduledThreadPool 1)))
 
 (def time-unit
   {:days TimeUnit/DAYS
-   :hours TimeUnit/HOURS
-   :microseconds TimeUnit/MICROSECONDS
-   :milliseconds TimeUnit/MILLISECONDS
    :minutes TimeUnit/MINUTES
-   :nanoseconds TimeUnit/NANOSECONDS
-   :seconds TimeUnit/SECONDS})
+   :hours TimeUnit/HOURS
+   :seconds TimeUnit/SECONDS
+   :milliseconds TimeUnit/MILLISECONDS
+   :microseconds TimeUnit/MICROSECONDS
+   :nanoseconds TimeUnit/NANOSECONDS})
 
-(defn schedule [f delay unit]
-  (.schedule executor f delay (time-unit unit)))
+;; Instead of bound-fn*, I would like to use the (private)
+;; clojure.core/binding-conveyor-fn
 
-(defn schedule-periodic [f initial-delay delay unit]
-  (.scheduleAtFixedRate executor f initial-delay delay (time-unit unit)))
+(defn delay-send [d units agnt action & args]
+  (let [fut (.schedule (force executor)
+                       (bound-fn* #(apply send agnt action args))
+                       d (time-unit units))]
+    (fn [] (.cancel fut false))))
 
-(defn scheduled-event [value delay unit]
-  (reify Observable
-    (subscribe [this observer]
-      (schedule #(on-event observer this value)
-		delay unit))))
-
-(defn periodic-event [value initial-delay delay unit]
-  (reify Observable
-    (subscribe [this observer]
-      (let [fut (schedule-periodic #(on-event observer this value)
-				   initial-delay delay unit)]
-	(fn [] (.cancel fut false))))))
+(defn periodic-send [init d units agnt action & args]
+  (let [fut (.scheduleAtFixedRate (force executor)
+                                  (bound-fn* #(apply send agnt action args))
+                                  init d (time-unit units))]
+    (fn [] (.cancel fut false))))
