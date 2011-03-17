@@ -93,6 +93,7 @@
                  (error [this e] (error observer e)))))))
 
 (defn drop [n source]
+  {:pre [(<= 0 n)]}
   (reify Observable
     (observe [this observer]
       (observe source
@@ -109,26 +110,31 @@
                     (done observer))
                   -1))))))
 
+(def Never (reify Observable
+             (observe [this observer]
+               (done observer))))
+
 (defn take [n source]
-  (reify Observable
-    (observe [this observer]
-      (let [unsub (promise)]
-        (deliver unsub
-                 (observe source
-                          (observer-agent
-                           (make-agent n observer)
-                           (fn [state m]
-                             (if (pos? state)
-                               (let [state2 (dec state)]
-                                 (message observer m)
-                                 (if (zero? state2)
-                                   (do (done observer)
-                                       (@unsub)
-                                       -1)
-                                   state2))
-                               state))
-                           (fn [state]
-                             (when (not (neg? state))
-                               (done observer))
-                             -1))))
-        (fn [] (@unsub))))))
+  {:pre [(<= 0 n)]}
+  (if (zero? n)
+    Never
+    (reify Observable
+      (observe [this observer]
+        (let [unsub (promise)]
+          (deliver unsub
+                   (observe source
+                            (observer-agent
+                             (make-agent (dec n) observer)
+                             (fn [state m]
+                               (cond (pos? state) (do (message observer m)
+                                                      (dec state))
+                                     (zero? state) (do (message observer m)
+                                                       (done observer)
+                                                       (@unsub)
+                                                       (dec state))
+                                     :else state))
+                             (fn [state]
+                               (when (not (neg? state))
+                                 (done observer))
+                               -1))))
+          (fn [] (@unsub)))))))
