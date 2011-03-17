@@ -3,7 +3,15 @@
   (:use cljque.observe
         [cljque.schedule :only (delay-send periodic-send)] )
   (:refer-clojure :exclude (concat cycle delay distinct drop filter
-                            first map merge range rest take)))
+                                   first map merge range rest take)))
+
+;;; Debugging
+
+(def debug-observer
+  (reify Observer
+    (message [this x] (prn x))
+    (done [this] (prn 'DONE))
+    (error [this e] (prn e))))
 
 ;;; Error handling
 
@@ -13,7 +21,7 @@
                           (error observer err))
          :error-mode :fail))
 
-(defn agent-observer [a on-message on-done]
+(defn observer-agent [a on-message on-done]
   (reify Observer
     (message [this m] (send a on-message m))
     (done [this] (send a on-done))
@@ -65,3 +73,62 @@
                          (+ state step))
                      (done observer))))
            (fn [] (send a (constantly end))))))))
+
+(defn map [f source]
+  (reify Observable
+    (observe [this observer]
+      (observe source
+               (reify Observer
+                 (message [this m] (message observer (f m)))
+                 (done [this] (done observer))
+                 (error [this e] (error observer e)))))))
+
+(defn filter [f source]
+  (reify Observable
+    (observe [this observer]
+      (observe source
+               (reify Observer
+                 (message [this m] (when (f m) (message observer m)))
+                 (done [this] (done observer))
+                 (error [this e] (error observer e)))))))
+
+(defn drop [n source]
+  (reify Observable
+    (observe [this observer]
+      (observe source
+               (observer-agent
+                (make-agent n observer)
+                (fn [state m]
+                  (when (zero? state)
+                    (message observer m))
+                  (if (pos? state)
+                    (dec state)
+                    state))
+                (fn [state]
+                  (when (not (neg? state))
+                    (done observer))
+                  -1))))))
+
+(defn take [n source]
+  (reify Observable
+    (observe [this observer]
+      (let [unsub (promise)]
+        (deliver unsub
+                 (observe source
+                          (observer-agent
+                           (make-agent n observer)
+                           (fn [state m]
+                             (if (pos? state)
+                               (let [state2 (dec state)]
+                                 (message observer m)
+                                 (if (zero? state2)
+                                   (do (done observer)
+                                       (@unsub)
+                                       -1)
+                                   state2))
+                               state))
+                           (fn [state]
+                             (when (not (neg? state))
+                               (done observer))
+                             -1))))
+        (fn [] (@unsub))))))
