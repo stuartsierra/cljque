@@ -48,6 +48,27 @@
   [& xs]
   (observable-seq xs))
 
+(def Never (reify Observable
+             (observe [this observer]
+               (send (agent nil) (fn [_] (done observer)))
+               (constantly nil))))
+
+;;; Internals
+
+(defn auto-unsubscribe [source]
+  "Wraps Observable source in an Observable which automatically
+  invokes its unsubscribe function when it signals `done`."
+  (reify Observable
+    (observe [this observer]
+      (let [unsub (promise)]
+        (deliver unsub
+                 (observe source
+                          (reify Observer
+                            (message [this m] (message observer m))
+                            (error [this err] (error observer err))
+                            (done [this] (done observer) (@unsub)))))
+        (fn [] (@unsub))))))
+
 ;;; "Push" sequence API
 
 (defn range
@@ -118,25 +139,6 @@
                   (when (not (neg? state))
                     (done observer))
                   -1))))))
-
-(defn auto-unsubscribe [source]
-  "Wraps Observable source in an Observable which automatically
-  invokes its unsubscribe function when it signals `done`."
-  (reify Observable
-    (observe [this observer]
-      (let [unsub (promise)]
-        (deliver unsub
-                 (observe source
-                          (reify Observer
-                            (message [this m] (message observer m))
-                            (error [this err] (error observer err))
-                            (done [this] (done observer) (@unsub)))))
-        (fn [] (@unsub))))))
-
-(def Never (reify Observable
-             (observe [this observer]
-               (send (agent nil) (fn [_] (done observer)))
-               (constantly nil))))
 
 (defn take [n source]
   {:pre [(<= 0 n)]}
