@@ -13,6 +13,18 @@
     (done [this] (prn 'DONE))
     (error [this e] (prn e))))
 
+(def debug-observable
+  (reify Observable
+    (observe [this observer]
+      (prn "Observer subscribed")
+      (future
+        (message observer 0)
+        (message observer 1)
+        (message observer 2)
+        (message observer 3)
+        (done observer))
+      (fn [] (prn "Observer unsubscribed")))))
+
 ;;; Error handling
 
 (defn make-agent [state observer]
@@ -30,21 +42,16 @@
 ;;; One-time event generators
 
 (defn messages
-  "Returns an observable which, when observed, synchronously invokes
+  "Returns an observable which, when observed, invokes
   (message observer x) for each xs, in order, then invokes 
-  (done observer).  The returned unsubscribe function has no effect."
+  (done observer)."
   [& xs]
-  (reify Observable
-    (observe [this observer]
-      (doseq [x xs]
-        (message observer x))
-      (done observer)
-      (constantly nil))))
+  (observable-seq xs))
 
 ;;; "Push" sequence API
 
 (defn range
-  "Returns an observable which, when observed, generated a series of
+  "Returns an observable which, when observed, generates a series of
   messages like clojure.core/range."
   ([]
      (reify Observable
@@ -99,42 +106,57 @@
       (observe source
                (observer-agent
                 (make-agent n observer)
+                ;; on message:
                 (fn [state m]
                   (when (zero? state)
                     (message observer m))
                   (if (pos? state)
                     (dec state)
                     state))
+                ;; on done:
                 (fn [state]
                   (when (not (neg? state))
                     (done observer))
                   -1))))))
 
+(defn auto-unsubscribe [source]
+  "Wraps Observable source in an Observable which automatically
+  invokes its unsubscribe function when it signals `done`."
+  (reify Observable
+    (observe [this observer]
+      (let [unsub (promise)]
+        (deliver unsub
+                 (observe source
+                          (reify Observer
+                            (message [this m] (message observer m))
+                            (error [this err] (error observer err))
+                            (done [this] (done observer) (@unsub)))))
+        (fn [] (@unsub))))))
+
 (def Never (reify Observable
              (observe [this observer]
-               (done observer))))
+               (send (agent nil) (fn [_] (done observer)))
+               (constantly nil))))
 
 (defn take [n source]
   {:pre [(<= 0 n)]}
   (if (zero? n)
     Never
-    (reify Observable
-      (observe [this observer]
-        (let [unsub (promise)]
-          (deliver unsub
-                   (observe source
-                            (observer-agent
-                             (make-agent (dec n) observer)
-                             (fn [state m]
-                               (cond (pos? state) (do (message observer m)
-                                                      (dec state))
-                                     (zero? state) (do (message observer m)
-                                                       (done observer)
-                                                       (@unsub)
-                                                       (dec state))
-                                     :else state))
-                             (fn [state]
-                               (when (not (neg? state))
-                                 (done observer))
-                               -1))))
-          (fn [] (@unsub)))))))
+    (auto-unsubscribe
+     (reify Observable
+       (observe [this observer]
+         (observe source
+                  (observer-agent
+                   (make-agent n observer)
+                   ;; on message:
+                   (fn [state m]
+                     (if (pos? state)
+                       (do (message observer m)
+                           (when (= 1 state) (done observer))
+                           (dec state))
+                       state))
+                   ;; on done:
+                   (fn [state]
+                     (when (pos? state)
+                       (done observer))
+                     -1))))))))
