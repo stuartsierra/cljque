@@ -19,9 +19,12 @@
       (prn "Observer subscribed")
       (future
         (message observer 0)
+        ;(Thread/sleep 100)
         (message observer 1)
+        ;(Thread/sleep 100)
         (message observer 2)
-        (message observer 3)
+        ;(Thread/sleep 100)
+        (message observer 3) 
         (done observer))
       (fn [] (prn "Observer unsubscribed")))))
 
@@ -102,14 +105,53 @@
                      (done observer))))
            (fn [] (send a (constantly end))))))))
 
-(defn map [f source]
-  (reify Observable
-    (observe [this observer]
-      (observe source
-               (reify Observer
-                 (message [this m] (message observer (f m)))
-                 (done [this] (done observer))
-                 (error [this e] (error observer e)))))))
+(defn- multimap-message [state observer f i m]
+  (when state
+    (let [state (update-in state [i] conj m)]
+      (if (every? seq state)
+        (do (message observer (apply f (clojure.core/map clojure.core/first state)))
+            (vec (clojure.core/map pop state)))
+        state))))
+
+(defn- multimap-done [state observer i]
+  (when state
+    (if (empty? (nth state i))
+      (do (done observer) nil)
+      state)))
+
+(defn map
+  ([f source]
+     (reify Observable
+       (observe [this observer]
+         (observe source
+                  (reify Observer
+                    (message [this m] (message observer (f m)))
+                    (done [this] (done observer))
+                    (error [this e] (error observer e)))))))
+  ([f source & more]
+     (let [sources (cons source more)]
+       (auto-unsubscribe
+        (reify Observable
+          (observe [this observer]
+            (let [a (make-agent (vec
+                                 (repeat
+                                  (count sources)
+                                  clojure.lang.PersistentQueue/EMPTY))
+                                observer)
+                  unsubs (doall
+                          (map-indexed
+                           (fn [i source]
+                             (observe
+                              source
+                              (reify Observer
+                                (message [this m]
+                                  (send a multimap-message observer f i m))
+                                (done [this]
+                                  (send a multimap-done observer i))
+                                (error [this err]
+                                  (error observer err)))))
+                           sources))]
+              (fn [] (doseq [u unsubs] (u))))))))))
 
 (defn filter [f source]
   (reify Observable
