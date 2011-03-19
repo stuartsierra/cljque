@@ -129,29 +129,29 @@
                     (done [this] (done observer))
                     (error [this e] (error observer e)))))))
   ([f source & more]
-     (let [sources (cons source more)]
-       (auto-unsubscribe
-        (reify Observable
-          (observe [this observer]
-            (let [a (make-agent (vec
-                                 (repeat
-                                  (count sources)
-                                  clojure.lang.PersistentQueue/EMPTY))
-                                observer)
-                  unsubs (doall
-                          (map-indexed
-                           (fn [i source]
-                             (observe
-                              source
-                              (reify Observer
-                                (message [this m]
-                                  (send a multimap-message observer f i m))
-                                (done [this]
-                                  (send a multimap-done observer i))
-                                (error [this err]
-                                  (error observer err)))))
-                           sources))]
-              (fn [] (doseq [u unsubs] (u))))))))))
+     (auto-unsubscribe
+      (reify Observable
+        (observe [this observer]
+          (let [sources (cons source more)
+                a (make-agent (vec
+                               (repeat
+                                (count sources)
+                                clojure.lang.PersistentQueue/EMPTY))
+                              observer)
+                unsubs (doall
+                        (map-indexed
+                         (fn [i source]
+                           (observe
+                            source
+                            (reify Observer
+                              (message [this m]
+                                (send a multimap-message observer f i m))
+                              (done [this]
+                                (send a multimap-done observer i))
+                              (error [this err]
+                                (error observer err)))))
+                         sources))]
+            (fn [] (doseq [u unsubs] (u)))))))))
 
 (defn filter [f source]
   (reify Observable
@@ -204,3 +204,38 @@
                      (when (pos? state)
                        (done observer))
                      -1))))))))
+
+(defn first-in [& sources]
+  (reify Observable
+    (observe [this observer]
+      (let [unsubs (promise)
+            a (make-agent -1 observer)]
+        (deliver
+         unsubs
+         (doall
+          (map-indexed
+           (fn [i source]
+             (observe source
+                      (observer-agent
+                       a
+                       ;; on message:
+                       (fn [state m]
+                         (cond
+                          (neg? state)
+                          (do (message observer m)
+                              (dorun (map-indexed
+                                      (fn [j u]
+                                        (when (not= j i) (u)))
+                                      @unsubs))
+                              i)
+                          (= state i)
+                          (do (message observer m)
+                              state)
+                          :else state))
+                       ;; on done:
+                       (fn [state m]
+                         (when (= state i)
+                           (done observer))
+                         state))))
+           sources)))
+        (fn [] (doseq [u @unsubs] (u)))))))
