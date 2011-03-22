@@ -242,3 +242,36 @@
                          state))))
            sources)))
         (fn [] (doseq [u @unsubs] (u)))))))
+
+;; Time-based event generators
+
+(defn delay
+  "For each message from source, generates the same message d units of
+  time later."
+  [d units source]
+  (reify Observable
+    (observe [this observer]
+      (observe source
+               (reify Observer
+                 (message [this m]
+                   (delay-call d units #(message observer m)))
+                 (done [this]
+                   (delay-call d units #(done observer)))
+                 (error [this err]
+                   (error observer err)))))))
+
+(defn regular
+  "Returns an Observable which generates messages pulled from sequence
+  s, one every d units of time, after an initial delay of init units."
+  [init d units s]
+  (reify Observable
+    (observe [this observer]
+      (let [a (make-agent s observer)
+            unsub (promise)]
+        (periodic-send init d units a
+                       (fn [state]
+                         (when-let [x (clojure.core/first state)]
+                           (message observer x)
+                           (if-let [more (next state)]
+                             more
+                             (do (done observer) nil)))))))))
