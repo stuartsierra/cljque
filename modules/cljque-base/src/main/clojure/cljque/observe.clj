@@ -67,3 +67,16 @@
                (done [this] (.put q ::done))
                (error [this e] (.put q (ObservableError. e)))))
     (consumer)))
+
+;;; Agents as Observers
+
+(defn observer-agent [a on-message on-done]
+  "Returns an Observer which forwards messages to Agent a:
+   When it receives a message m, calls (send a on-message m) ;
+   When it receives done, calls (send a on-done) ;
+   And when it receives an exception, sends a function which 
+   rethrows the exception."
+  (reify Observer
+    (message [this m] (send a on-message m))
+    (done [this] (send a on-done))
+    (error [this e] (send a (fn [_] (throw e))))))
