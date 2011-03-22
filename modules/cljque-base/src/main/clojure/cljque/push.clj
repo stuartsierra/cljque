@@ -5,42 +5,13 @@
   (:refer-clojure :exclude (concat cycle delay distinct drop filter
                                    first map merge range rest take)))
 
-;;; Debugging
-
-(def debug-observer
-  (reify Observer
-    (message [this x] (prn x))
-    (done [this] (prn 'DONE))
-    (error [this e] (prn e))))
-
-(def debug-observable
-  (reify Observable
-    (observe [this observer]
-      (prn "Observer subscribed")
-      (future
-        (message observer 0)
-        ;(Thread/sleep 100)
-        (message observer 1)
-        ;(Thread/sleep 100)
-        (message observer 2)
-        ;(Thread/sleep 100)
-        (message observer 3) 
-        (done observer))
-      (fn [] (prn "Observer unsubscribed")))))
-
 ;;; Error handling
 
-(defn make-agent [state observer]
+(defn- make-agent [state observer]
   (agent state
          :error-handler (fn [agnt err]
                           (error observer err))
          :error-mode :fail))
-
-(defn observer-agent [a on-message on-done]
-  (reify Observer
-    (message [this m] (send a on-message m))
-    (done [this] (send a on-done))
-    (error [this e] (send a (fn [_] (throw e))))))
 
 ;;; One-time event generators
 
@@ -49,12 +20,25 @@
   (message observer x) for each xs, in order, then invokes 
   (done observer)."
   [& xs]
-  (observable-seq xs))
+  (reify Observable
+    (observe [this observer]
+      (let [a (make-agent xs observer)]
+        (send a (fn thisfn [state]
+                  (let [x (first xs)]
+                    (when x
+                      (message observer x)
+                      (let [more (next xs)]
+                        (if more
+                          (send *agent* thisfn more)
+                          (done observer)))))))
+        (fn [] (send a (constantly nil)))))))
 
-(def Never (reify Observable
-             (observe [this observer]
-               (send (agent nil) (fn [_] (done observer)))
-               (constantly nil))))
+(def ^{:doc "An Observable which immediately signals done."}
+  DONE
+  (reify Observable
+    (observe [this observer]
+      (send (agent nil) (fn [_] (done observer)))
+      (constantly nil))))
 
 ;;; Internals
 
@@ -69,7 +53,7 @@
                           (reify Observer
                             (message [this m] (message observer m))
                             (error [this err] (error observer err))
-                            (done [this] (done observer) (@unsub)))))
+                            (done [this] (@unsub) (done observer)))))
         (fn [] (@unsub))))))
 
 ;;; "Push" sequence API
@@ -120,6 +104,15 @@
       state)))
 
 (defn map
+  "With two arguments, returns an Observable which genarates messages
+  that are the result of calling f on each message from source.
+
+  With more than two arguments, enqueues messages from sources.  As
+  soon as all sources have generated at least one message, calls f
+  with the first message from each source as arguments.  Then waits
+  until all sources have generated at least one more message, and so
+  on.  Note that if one source produces messages much faster than
+  other sources, the queues could grow quite large."
   ([f source]
      (reify Observable
        (observe [this observer]
@@ -153,7 +146,10 @@
                          sources))]
             (fn [] (doseq [u unsubs] (u)))))))))
 
-(defn filter [f source]
+(defn filter
+  "Returns an Observable which relays messages from source for
+  which (f message) is true."
+  [f source]
   (reify Observable
     (observe [this observer]
       (observe source
@@ -162,8 +158,10 @@
                  (done [this] (done observer))
                  (error [this e] (error observer e)))))))
 
-(defn drop [n source]
-  {:pre [(<= 0 n)]}
+(defn drop
+  "Returns an Observable which skips the first n messages from
+  source, then relays all subsequent messages."
+  [n source] {:pre [(<= 0 n)]}
   (reify Observable
     (observe [this observer]
       (observe source
@@ -182,10 +180,12 @@
                     (done observer))
                   -1))))))
 
-(defn take [n source]
-  {:pre [(<= 0 n)]}
+(defn take
+  "Returns an Observable which relays the first n messages from
+  source, then signals done."
+  [n source] {:pre [(<= 0 n)]}
   (if (zero? n)
-    Never
+    DONE
     (auto-unsubscribe
      (reify Observable
        (observe [this observer]
@@ -205,7 +205,10 @@
                        (done observer))
                      -1))))))))
 
-(defn first-in [& sources]
+(defn first-in
+  "Returns an Observable which relays messages from the source
+  which produces a message first, and only that source."
+  [& sources]
   (reify Observable
     (observe [this observer]
       (let [unsubs (promise)
