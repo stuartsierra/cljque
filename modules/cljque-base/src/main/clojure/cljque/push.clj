@@ -1,7 +1,7 @@
 (ns cljque.push
   "'Push' sequence API, mirroring the API of Clojure's 'pull' sequences."
   (:use cljque.observe
-        [cljque.schedule :only (delay-send periodic-send)] )
+        [cljque.schedule :only (delay-call periodic-send)] )
   (:refer-clojure :exclude (concat cycle delay distinct drop filter
                                    first map merge range rest take)))
 
@@ -24,7 +24,7 @@
     (observe [this observer]
       (let [a (make-agent xs observer)]
         (send a (fn thisfn [state]
-                  (let [x (first xs)]
+                  (let [x (clojure.core/first xs)]
                     (when x
                       (message observer x)
                       (let [more (next xs)]
