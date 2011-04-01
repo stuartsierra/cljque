@@ -68,7 +68,7 @@
   exception, consuming the sequence will throw the same exception."
   [observable]
   (let [q (java.util.concurrent.LinkedBlockingQueue.)
-        teminator (Object.)
+        terminator (Object.)
         consumer (fn thisfn []
                    (lazy-seq
                     (let [x (.take q)]
