@@ -26,9 +26,9 @@ Modules:
 
 Namespaces in cljque-base:
 
-* cljque.observe - core protocols for generators/consumers of asynchronous events
-* cljque.push - library of functions, similar to Clojure's sequence API, for "push"-style events
-* cljque.schedule - thin layer over Java's ScheduledThreadPoolExecutor
+* [cljque.observe](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/observe.clj) - core protocols for generators/consumers of asynchronous events
+* [cljque.push](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/push.clj) - library of functions, similar to Clojure's sequence API, for "push"-style events
+* [cljque.schedule](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/schedule.clj) - thin layer over Java's ScheduledThreadPoolExecutor
 
 
 Inspirations / References
