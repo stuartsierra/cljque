@@ -164,21 +164,16 @@
   [n source] {:pre [(<= 0 n)]}
   (reify Observable
     (observe [this observer]
-      (observe source
-               (observer-agent
-                (make-agent n observer)
-                ;; on message:
-                (fn [state m]
-                  (when (zero? state)
-                    (message observer m))
-                  (if (pos? state)
-                    (dec state)
-                    state))
-                ;; on done:
-                (fn [state]
-                  (when (not (neg? state))
-                    (done observer))
-                  -1))))))
+      (let [a (atom n)]
+        (observe source
+                 (reify Observer
+                   (message [this m]
+                     (when (neg? (swap! a (fn [x] (if (neg? x) x (dec x)))))
+                       (message observer m)))
+                   (error [this e]
+                     (error observer e))
+                   (done [this]
+                     (done observer))))))))
 
 (defn take
   "Returns an Observable which relays the first n messages from
@@ -189,21 +184,21 @@
     (auto-unsubscribe
      (reify Observable
        (observe [this observer]
-         (observe source
-                  (observer-agent
-                   (make-agent n observer)
-                   ;; on message:
-                   (fn [state m]
-                     (if (pos? state)
-                       (do (message observer m)
-                           (when (= 1 state) (done observer))
-                           (dec state))
-                       state))
-                   ;; on done:
-                   (fn [state]
-                     (when (pos? state)
-                       (done observer))
-                     -1))))))))
+         (let [a (atom n)]
+           (observe source
+                    (reify Observer
+                      (message [this m]
+                        (let [n (swap! a dec)]
+                          (when (not (neg? n))
+                            (message observer m))
+                          (when (zero? n)
+                            (done observer))))
+                      (error [this e]
+                        (error observer e))
+                      (done [this]
+                        (let [n (swap! a dec)]
+                          (when (not (neg? n))
+                            (done observer))))))))))))
 
 (defn first-in
   "Returns an Observable which relays messages from the source
