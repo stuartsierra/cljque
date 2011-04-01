@@ -36,3 +36,4 @@ Differences from Reactive Extensions for .NET
 
 * Rx does not permit any more 'OnNext' events after an 'OnError' event [RxDG sec 4.1]; Cljque permits events to continue after an error.
 * Rx promises that event consumers will not be called on multiple threads simultaneously [RxDG sec 4.2]; Cljque requires the addition of Ageets to ensure serialization.
+* Rx permits you to specify a Scheduler to execute the callback; Cljque does not
