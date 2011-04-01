@@ -2,18 +2,18 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cljque.version>0.1.0-SNAPSHOT</cljque.version>
   </properties>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.stuartsierra</groupId>
   <artifactId>cljque-parent</artifactId>
-  <version>${cljque.version}</version>
-  <name>${artifactId}</name>
+  <version>0.1.0</version>
+  <name>${project.artifactId}</name>
   <packaging>pom</packaging>
   <description>experiments in message-passing architectures in Clojure</description>
   <modules>
     <module>modules/cljque-base</module>
-    <module>modules/cljque-netty</module>
+    <!-- Disabled until fixed to work with latest API -->
+    <!-- <module>modules/cljque-netty</module> -->
   </modules>
   <dependencies>
     <dependency>

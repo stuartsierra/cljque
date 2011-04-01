@@ -3,8 +3,8 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.stuartsierra</groupId>
   <artifactId>cljque-base</artifactId>
-  <version>${cljque.version}</version>
-  <name>${artifactId}</name>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>${project.artifactId}</name>
   <packaging>clojure</packaging>
   <parent>
     <groupId>com.stuartsierra</groupId>
@@ -17,9 +17,6 @@
       <plugin>
         <groupId>com.theoryinpractise</groupId>
         <artifactId>clojure-maven-plugin</artifactId>
-	<configuration>
-	  <testScript>src/test/script/runtests.clj</testScript>
-	</configuration>
       </plugin>
     </plugins>
   </build>
