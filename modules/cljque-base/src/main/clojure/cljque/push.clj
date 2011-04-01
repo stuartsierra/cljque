@@ -89,19 +89,14 @@
                      (done observer))))
            (fn [] (send a (constantly end))))))))
 
-(defn- multimap-message [state observer f i m]
-  (when state
-    (let [state (update-in state [i] conj m)]
-      (if (every? seq state)
-        (do (message observer (apply f (clojure.core/map clojure.core/first state)))
-            (vec (clojure.core/map pop state)))
-        state))))
-
-(defn- multimap-done [state observer i]
-  (when state
-    (if (empty? (nth state i))
-      (do (done observer) nil)
-      state)))
+(defn- update-multimap [r i m]
+  (dosync
+   (when @r
+     (alter r update-in [i] conj m)
+     (when (every? seq @r)
+       (let [rv (clojure.core/map clojure.core/first @r)]
+         (alter r (fn [state] (vec (clojure.core/map pop state))))
+         rv)))))
 
 (defn map
   "With two arguments, returns an Observable which genarates messages
@@ -126,23 +121,21 @@
       (reify Observable
         (observe [this observer]
           (let [sources (cons source more)
-                a (make-agent (vec
-                               (repeat
-                                (count sources)
-                                clojure.lang.PersistentQueue/EMPTY))
-                              observer)
+                r (ref (vec (repeat (count sources)
+                                    clojure.lang.PersistentQueue/EMPTY)))
                 unsubs (doall
                         (map-indexed
                          (fn [i source]
-                           (observe
-                            source
-                            (reify Observer
-                              (message [this m]
-                                (send a multimap-message observer f i m))
-                              (done [this]
-                                (send a multimap-done observer i))
-                              (error [this err]
-                                (error observer err)))))
+                           (observe source
+                                    (reify Observer
+                                      (message [this m]
+                                        (when-let [v (update-multimap r i m)]
+                                          (message observer (apply f v))))
+                                      (error [this e]
+                                        (error observer e))
+                                      (done [this]
+                                        (when (and @r (empty? (nth @r i)))
+                                          (done observer))))))
                          sources))]
             (fn [] (doseq [u unsubs] (u)))))))))
 
