@@ -30,7 +30,8 @@
                       (let [more (next xs)]
                         (if more
                           (send *agent* thisfn more)
-                          (done observer)))))))
+                          (done observer))
+                        more)))))
         (fn [] (send a (constantly nil)))))))
 
 (def ^{:doc "An Observable which immediately signals done."}
@@ -113,7 +114,8 @@
        (observe [this observer]
          (observe source
                   (reify Observer
-                    (message [this m] (message observer (f m)))
+                    (message [this m] (try (message observer (f m))
+                                           (catch Throwable t (error observer t))))
                     (done [this] (done observer))
                     (error [this e] (error observer e)))))))
   ([f source & more]
@@ -130,7 +132,8 @@
                                     (reify Observer
                                       (message [this m]
                                         (when-let [v (update-multimap r i m)]
-                                          (message observer (apply f v))))
+                                          (try (message observer (apply f v))
+                                               (catch Throwable t (error observer t)))))
                                       (error [this e]
                                         (error observer e))
                                       (done [this]
@@ -147,7 +150,8 @@
     (observe [this observer]
       (observe source
                (reify Observer
-                 (message [this m] (when (f m) (message observer m)))
+                 (message [this m] (try (when (f m) (message observer m))
+                                        (catch Throwable t (error observer t))))
                  (done [this] (done observer))
                  (error [this e] (error observer e)))))))
 
@@ -200,36 +204,36 @@
   (reify Observable
     (observe [this observer]
       (let [unsubs (promise)
-            a (make-agent -1 observer)]
+            r (ref nil)]
         (deliver
          unsubs
          (doall
           (map-indexed
            (fn [i source]
              (observe source
-                      (observer-agent
-                       a
-                       ;; on message:
-                       (fn [state m]
-                         (cond
-                          (neg? state)
-                          (do (message observer m)
+                      (reify Observer
+                        (message [this m]
+                          (let [pass-thru (dosync
+                                           (cond (= @r i) true
+                                                 (nil? @r) (do (ref-set r i) :new)
+                                                 :else false))]
+                            (when pass-thru
+                              (message observer m))
+                            (when (= :new pass-thru)
                               (dorun (map-indexed
                                       (fn [j u]
                                         (when (not= j i) (u)))
-                                      @unsubs))
-                              i)
-                          (= state i)
-                          (do (message observer m)
-                              state)
-                          :else state))
-                       ;; on done:
-                       (fn [state m]
-                         (when (= state i)
-                           (done observer))
-                         state))))
+                                      @unsubs)))))
+                        (error [this e]
+                          (when (let [a @r] (or (= a i) (nil? a)))
+                            (error observer e)))
+                        (done [this]
+                          (when (= @r i)
+                            (done observer))))))
            sources)))
-        (fn [] (doseq [u @unsubs] (u)))))))
+        (fn []
+          (dosync (ref-set r false))
+          (doseq [u @unsubs] (u)))))))
 
 ;; Time-based event generators
 
