@@ -13,10 +13,21 @@ the terms of this license.  You must not remove this notice, or any
 other, from this software.
 
 
-Goals
+Overview
 ========================================
 
-See [Asynchronous Events](http://dev.clojure.org/display/design/Asynchronous+Events) on the Clojure wiki
+Goals: See [Asynchronous Events](http://dev.clojure.org/display/design/Asynchronous+Events) on the Clojure wiki
+
+Modules:
+
+* cljque-base - the core library, with no external dependencies
+* cljque-netty - adaptors between the Netty I/O library and Cljque; *currently broken*
+
+Namespaces in cljque-base:
+
+* cljque.observe - core protocols for generators/consumers of asynchronous events
+* cljque.push - library of functions, similar to Clojure's sequence API, for "push"-style events
+* cljque.schedule - thin layer over Java's ScheduledThreadPoolExecutor
 
 
 Inspirations / References
