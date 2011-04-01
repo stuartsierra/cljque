@@ -20,6 +20,7 @@ Goals: See [Asynchronous Events](http://dev.clojure.org/display/design/Asynchron
 
 Modules:
 
+* cljque-parent - the top-level container for other modules
 * cljque-base - the core library, with no external dependencies
 * cljque-netty - adaptors between the Netty I/O library and Cljque; *currently broken*
 
