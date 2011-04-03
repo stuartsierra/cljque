@@ -103,7 +103,8 @@
               (when (not (neg? x))
                 (target event))
               (when (zero? x)
-                (shutter target event)))))))
+                (shutter target event)))
+            (shutter target event)))))
 
 (deftype MultiCloserEvent [event closers]
   Observation
