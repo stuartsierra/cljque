@@ -1,5 +1,5 @@
 (ns cljque.events
-  (:refer-clojure :exclude (map filter take merge)))
+  (:refer-clojure :exclude (map filter take take-while merge)))
 
 (defprotocol Observable
   (register [this f]))
@@ -104,6 +104,15 @@
                 (target event))
               (when (zero? x)
                 (shutter target event)))
+            (shutter target event)))))
+
+(defn take-while [f src]
+  (let [open? (atom true)]
+    (lens [target event src]
+          (if (observe event)
+            (if (swap! open? (fn [_] (f (value event))))
+              (target event)
+              (shutter target event))
             (shutter target event)))))
 
 (deftype MultiCloserEvent [event closers]
