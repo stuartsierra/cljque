@@ -140,18 +140,38 @@
                   (map #(vector i %) source))
                 sources)))
 
+(comment
+  (defn first-in [& sources]
+    (let [a (atom nil)]
+      (map second
+           (take-while
+            ;; This doesn't work because closing 1 closes them all
+            (fn [[i x]] (= i (swap! a (fn [n] (if (nil? n) i n)))))
+            (apply merge-indexed sources))))))
+
+(defn ignore-stop [source]
+  (lens [target event source]
+        (when (observe event)
+          (target event))))
+
 (defn first-in [& sources]
   (let [a (atom nil)]
-    (map second
-         (filter
-          (fn [[i x]] (= i (swap! a (fn [n] (if (nil? n) i n)))))
-          (apply merge-indexed sources)))))
+    (reify Observable
+      (register [this f]
+        (dorun
+         (clojure.core/map-indexed
+          (fn [i source]
+            (register (ignore-stop
+                       (take-while (fn [_] (= i (swap! a (fn [n] (if (nil? n) i n)))))
+                                   source))
+                      f))
+          sources))))))
 
 (let [a (agent nil)]
   (defn safe-prn [& args]
     (send-off a (fn [_] (apply prn args)))))
 
-(def debug-observable
+(defn debug-observable []
   (reify Observable
     (register [this f]
       (safe-prn "Registered")
