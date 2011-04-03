@@ -1,5 +1,5 @@
 (ns cljque.events
-  (:refer-clojure :exclude (map filter take)))
+  (:refer-clojure :exclude (map filter take merge)))
 
 (defprotocol Observable
   (register [this f]))
@@ -33,29 +33,26 @@
   Closeable
   (close [this] (close closer)))
 
+(defn observation [x closer]
+  (ObservedValue. x closer))
+
 (deftype ObservedThrowable [t]
   Observation
   (value [this] (throw t))
   (observe [this] this))
 
-(defn ^:dynamic relay [x] nil)
-
-(defn stop [closer]
-  (close closer)
-  (relay nil))
-
-(defn push [x closer]
-  (relay (ObservedValue. x closer)))
-
-(defmacro lens [event-source & body]
+(defmacro lens [[target event source] & body]
   `(reify Observable
-     (register [this g#]
-       (register ~(second event-source)
-                 (fn [~(first event-source)]
-                   (binding [relay g#]
-                     (try ~@body
-                          (catch Throwable t#
-                            (relay (ObservedThrowable. t#))))))))))
+     (register [this# ~target]
+       (register ~source
+                 (fn [~event]
+                   (try ~@body
+                        (catch Throwable t#
+                          (~target (ObservedThrowable. t#)))))))))
+
+(defn shutter [target event]
+  (close event)
+  (target nil))
 
 (defn observable-seq [s]
   (reify Observable
@@ -70,7 +67,7 @@
               (when (and (seq s) @open?)
                 (f (ObservedValue. (first s) closer))
                 (recur (rest s))))
-            (f nil)
+            (when @open? (f nil))
             (catch Throwable t
               (f (ObservedThrowable. t)))))))))
 
@@ -86,27 +83,68 @@
     (consumer)))
 
 (defn map [f src]
-  (lens [event src]
+  (lens [target event src]
         (if (observe event)
-          (push (f (value event)) event)
-          (stop event))))
+          (target (observation (f (value event)) event))
+          (shutter target event))))
 
 (defn filter [f src]
-  (lens [event src]
+  (lens [target event src]
         (if (observe event)
           (when (f (value event))
-            (relay event))
-          (stop event))))
+            (target event))
+          (shutter target event))))
 
 (defn take [n src]
   (let [a (atom n)]
-    (lens [event src]
+    (lens [target event src]
           (if (observe event)
             (let [x (swap! a #(if (neg? %) % (dec %)))]
               (when (not (neg? x))
-                (relay event))
+                (target event))
               (when (zero? x)
-                (stop event)))))))
+                (shutter target event)))))))
+
+(deftype MultiCloserEvent [event closers]
+  Observation
+  (value [this] (value event))
+  (observe [this] this)
+  Closeable
+  (close [this] (doseq [c @closers] (close c))))
+
+(deftype MultiCloser [source closers]
+  Observable
+  (register [this f]
+    (register source
+              (fn [event]
+                (f (MultiCloserEvent. event closers)))))
+  Closeable
+  (close [this]
+    (doseq [c @closers] (close c))))
+
+(defn merge [& sources]
+  (reify Observable
+    (register [this f]
+      (let [closers (promise)]
+        (deliver closers
+                  (doall (clojure.core/map
+                         (fn [source]
+                           (register (MultiCloser. source closers) f))
+                         sources)))
+        (MultiCloser. this closers)))))
+
+(defn merge-indexed [& sources]
+  (apply merge (clojure.core/map-indexed
+                (fn [i source]
+                  (map #(vector i %) source))
+                sources)))
+
+(defn first-in [& sources]
+  (let [a (atom nil)]
+    (map second
+         (filter
+          (fn [[i x]] (= i (swap! a (fn [n] (if (nil? n) i n)))))
+          (apply merge-indexed sources)))))
 
 (let [a (agent nil)]
   (defn safe-prn [& args]
@@ -122,13 +160,16 @@
                        (safe-prn "Closed")
                        (reset! open? false)))]
         (future
-          (dotimes [i 5]
-            (when @open?
-              (safe-prn "Generating" i)
-              (f (ObservedValue. i closer))
-              (Thread/sleep 100)))
-          (when @open?
-            (safe-prn "Generating" nil)
-            (f nil)
-            (close closer)))
+          (try
+           (dotimes [i 5]
+             (when @open?
+               (safe-prn "Generating" i)
+               (f (ObservedValue. i closer))
+               (Thread/sleep 100)))
+           (when @open?
+             (safe-prn "Generating" nil)
+             (f nil)
+             (close closer))
+           (catch Throwable t
+             (safe-prn "THROWN" t))))
         closer))))
