@@ -1,4 +1,6 @@
-(ns cljque.active-observers)
+;; -*- mode: clojure; eval: (define-clojure-indent (continue 'defun)) -*-
+(ns cljque.active-observers
+  (:refer-clojure :exclude (map filter take drop reduce)))
 
 (defprotocol Observable
   (observe [this observer]))
@@ -51,35 +53,88 @@
   (on-error [this err] (prn :ON-ERROR err) this)
   (on-done [this] (prn :ON-DONE) this))
 
-(defn map [f observer]
-  (reify
-    ObserverReturn
-    (more? [this] (more? observer))
-    (result [this] (result observer))
-    Observer
-    (on-next [this event] (map f (on-next observer (f event))))
-    (on-error [this err] (on-error observer err))
-    (on-done [this] (on-done observer))))
+(defprotocol Observation
+  (current [this])
+  (done? [this]))
 
-(defn reduce [f seed]
-  (reify
-    ObserverReturn
-    (more? [this] true)
-    (result [this] seed)
-    Observer
-    (on-next [this event] (reduce f (f seed event)))
-    (on-error [this err] (ObserverError. err))
-    (on-done [this] (ObserverResult. seed))))
+(deftype ObservationEvent [event]
+  Observation
+  (current [this] event)
+  (done? [this] false))
+
+(deftype ObservationError [err]
+  Observation
+  (current [this] (throw err))
+  (done? [this] false))
+
+(deftype ObservationDone []
+  Observation
+  (current [this] nil)
+  (done? [this] true))
+
+(deftype ObserverFunction [f]
+  ObserverReturn
+  (more? [this] true)
+  (result [this] nil)
+  Observer
+  (on-next [this event]
+    (try (f (ObservationEvent. event))
+         (catch Throwable t
+           (ObserverError. t))))
+  (on-error [this err]
+    (try (f (ObservationError. err))
+         (catch Throwable t
+           (ObserverError. t))))
+  (on-done [this]
+    (try (f (ObservationDone.))
+         (catch Throwable t
+           (ObserverError. t)))))
+
+(defn continue-with [f]
+  (ObserverFunction. f))
+
+(defmacro continue [argv & body]
+  `(continue-with
+    (fn ~argv ~@body)))
+
+(defn finish [result]
+  (ObserverResult. result))
+
+(defn stop [observer]
+  (stop (result (on-done observer))))
+
+(defn map [f observer]
+  (continue [observation]
+    (if (done? observation)
+      (stop observer)
+      (map f (on-next observer (f (current observation)))))))
 
 (defn take [n observer]
-  (if (and (zero? n) (more? observer))
-    (take -1 (on-done observer))
-    (reify
-      ObserverReturn
-      (more? [this] (and (pos? n) (more? observer)))
-      (result [this] (result observer))
-      Observer
-      (on-next [this event]
-        (take (dec n) (on-next observer event)))
-      (on-error [this err] (on-error observer err))
-      (on-done [this] (on-done observer)))))
+  (if (zero? n)
+    (stop observer)
+    (continue [observation]
+      (if (done? observation)
+        (stop observer)
+        (take (dec n) (on-next observer (current observation)))))))
+
+(defn drop [n observer]
+  (if (zero? n)
+    observer
+    (continue [observation]
+      (if (done? observation)
+        (stop observer)
+        (drop (dec n) observer)))))
+
+(defn filter [f observer]
+  (continue [observation]
+    (if (done? observation)
+      (stop observer)
+      (if (f (current observation))
+        (filter f (on-next observer (current observation)))
+        (filter f observer)))))
+
+(defn reduce [f seed]
+  (continue [observation]
+    (if (done? observation)
+      (finish seed)
+      (reduce f (f seed (current observation))))))
