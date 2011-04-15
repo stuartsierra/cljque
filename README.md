@@ -1,3 +1,5 @@
+# Cljque is experimental and unstable
+
 Cljque - experiments in event-based architectures in Clojure
 
 Cljque is pronounced "clique" or "click"
