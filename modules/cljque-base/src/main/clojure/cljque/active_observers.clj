@@ -69,41 +69,38 @@
 
 ;;; Observable Futures
 
-(declare observable-promise)
+(defn notification-queue []
+  (ref []))
 
-(deftype ObserverPromise [observer p]
-  Observer
-  (on-next [this observable]
-    (let [o (on-next observer observable)]
-      (when (not? (more? observer))
-        (deliver p (result observer)))))
-  ObserverMore
-  (more? [this] (more? observer))
-  ObserverResult
-  (result [this] (result observer))
-  clojure.lang.IDeref
-  (deref [this] @p))
+(defn notify [q value]
+  (doseq [recipient (dosync (let [qq @q] (ref-set q nil)))]
+    (recipient value)))
 
-(defn observer-promise [observer]
-  (ObserverPromise. observer (promise)))
+(defn add-recipient [q x]
+  (dosync (if (nil? @q)
+            false
+            (do (alter q conj x)
+                true))))
+
+(deftype ObservedPromise [p observer]
+  clojure.lang.IFn
+  (invoke [this value]
+    (deliver p (result (on-next observer this))))
+  (observe [this]))
 
 (deftype ObservablePromise [p q]
   clojure.lang.IFn
   (invoke [this value]
     (deliver p value)
-    (doseq [observer (dosync (let [x @q] (ref-set q nil) x))]
-      (when (more? observer)
-        (on-next observer this))))
+    (doseq [xs (dosync (let [x @q] (ref-set q nil) x))]
+      (deliver xs value)))
   clojure.lang.IDeref
   (deref [this] @p)
   Observable
   (observe [this observer]
-    (let [op (observable-promise)]
-      (when (nil? (dosync (alter q #(if (nil? %) nil (conj % observer)))))
-        (on-next observer this)
-        (when-not (more? observer this)
-          (deliver op (result observer))))
-      op))
+    (let [op (ObservablePromise. (promise) (ref []))])
+    (if (nil? (dosync (alter q #(if (nil? %) nil (conj % op)))))
+      ()))
   ObservableCurrent
   (current [this] @p))
 
