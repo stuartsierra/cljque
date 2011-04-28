@@ -67,6 +67,60 @@
   [current source]
   (ObservableEvent. current source))
 
+;;; Observable Futures
+
+(declare observable-promise)
+
+(deftype ObserverPromise [observer p]
+  Observer
+  (on-next [this observable]
+    (let [o (on-next observer observable)]
+      (when (not? (more? observer))
+        (deliver p (result observer)))))
+  ObserverMore
+  (more? [this] (more? observer))
+  ObserverResult
+  (result [this] (result observer))
+  clojure.lang.IDeref
+  (deref [this] @p))
+
+(defn observer-promise [observer]
+  (ObserverPromise. observer (promise)))
+
+(deftype ObservablePromise [p q]
+  clojure.lang.IFn
+  (invoke [this value]
+    (deliver p value)
+    (doseq [observer (dosync (let [x @q] (ref-set q nil) x))]
+      (when (more? observer)
+        (on-next observer this))))
+  clojure.lang.IDeref
+  (deref [this] @p)
+  Observable
+  (observe [this observer]
+    (let [op (observable-promise)]
+      (when (nil? (dosync (alter q #(if (nil? %) nil (conj % observer)))))
+        (on-next observer this)
+        (when-not (more? observer this)
+          (deliver op (result observer))))
+      op))
+  ObservableCurrent
+  (current [this] @p))
+
+(defn observable-promise []
+  (ObservablePromise. (promise) (ref [])))
+
+(defn observable-future-call [f]
+  (let [op (observable-promise)]
+    (future
+      (let [result (try (f)
+                        (catch Throwable t t))]
+        (deliver op result)))
+    op))
+
+(defmacro observable-future [& body]
+  `(observable-future-call (fn [] ~@body)))
+
 ;;; Observers and their return values
 
 (deftype ObserverError [err]
