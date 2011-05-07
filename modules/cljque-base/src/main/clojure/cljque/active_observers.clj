@@ -67,57 +67,6 @@
   [current source]
   (ObservableEvent. current source))
 
-;;; Observable Futures
-
-(defn notification-queue []
-  (ref []))
-
-(defn notify [q value]
-  (doseq [recipient (dosync (let [qq @q] (ref-set q nil)))]
-    (recipient value)))
-
-(defn add-recipient [q x]
-  (dosync (if (nil? @q)
-            false
-            (do (alter q conj x)
-                true))))
-
-(deftype ObservedPromise [p observer]
-  clojure.lang.IFn
-  (invoke [this value]
-    (deliver p (result (on-next observer this))))
-  (observe [this]))
-
-(deftype ObservablePromise [p q]
-  clojure.lang.IFn
-  (invoke [this value]
-    (deliver p value)
-    (doseq [xs (dosync (let [x @q] (ref-set q nil) x))]
-      (deliver xs value)))
-  clojure.lang.IDeref
-  (deref [this] @p)
-  Observable
-  (observe [this observer]
-    (let [op (ObservablePromise. (promise) (ref []))])
-    (if (nil? (dosync (alter q #(if (nil? %) nil (conj % op)))))
-      ()))
-  ObservableCurrent
-  (current [this] @p))
-
-(defn observable-promise []
-  (ObservablePromise. (promise) (ref [])))
-
-(defn observable-future-call [f]
-  (let [op (observable-promise)]
-    (future
-      (let [result (try (f)
-                        (catch Throwable t t))]
-        (deliver op result)))
-    op))
-
-(defmacro observable-future [& body]
-  `(observable-future-call (fn [] ~@body)))
-
 ;;; Observers and their return values
 
 (deftype ObserverError [err]
@@ -168,6 +117,61 @@
   "Sends a nil event to observer and returns its result value."
   [observer]
   (return (result (on-next observer nil))))
+
+;;; Observable promises
+
+(deftype IdentityObserver []
+  Observer
+  (on-next [this observable]
+    (return (current observable))))
+
+(declare observable-result)
+
+(deftype ObservableResult [result-promise observer watchers-atom]
+  clojure.lang.IFn
+  (invoke [this observable]
+    (deliver result-promise (result (on-next observer observable)))
+    (doseq [watcher @watchers-atom]
+      (deliver watcher this))
+    this)
+  clojure.lang.IDeref
+  (deref [this] @result-promise)
+  clojure.lang.IPending
+  (isRealized [this] (realized? result-promise))
+  ObservableCurrent
+  (current [this] @result-promise)
+  Observable
+  (observe [this observer]
+    (let [watcher (observable-result observer)]
+      (if (realized? result-promise)
+        (deliver watcher this)
+        (do (swap! watchers-atom conj watcher)
+            watcher)))))
+
+(defn observable-result [observer]
+  (ObservableResult. (promise) observer (atom [])))
+
+(deftype ObservablePromise [result-promise watchers-atom]
+  clojure.lang.IFn
+  (invoke [this value]
+    (when-not (realized? result-promise)
+      (deliver result-promise value)
+      (doseq [watcher @watchers-atom]
+        (deliver watcher (event value this))))
+    this)
+  clojure.lang.IDeref
+  (deref [this] @result-promise)
+  clojure.lang.IPending
+  (isRealized [this] (realized? result-promise))
+  ObservableCurrent
+  (current [this] @result-promise)
+  Observable
+  (observe [this observer]
+    (let [watcher (observable-result observer)]
+      (if (realized? result-promise)
+        (deliver watcher this)
+        (do (swap! watchers-atom conj watcher)
+            watcher)))))
 
 ;;; Observable sequences
 
