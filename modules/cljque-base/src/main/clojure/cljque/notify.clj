@@ -1,81 +1,74 @@
 (ns cljque.notify)
 
-(defprotocol Observable
-  (observe [this observer]))
+(defprotocol IRegister
+  (register [this f]
+    "When this is realized, invokes f on this. Returns an IPending
+    which receives the return value of f. f must must return an object
+    of the same interface types as this and must not throw. If this
+    already has a value, may invoke f synchronously."))
 
-(defprotocol Feeder
-  (feed [this observable]))
-
-(declare invoke-observer)
-
-(deftype ObservableValue [v]
+(deftype RealizedValue [v]
   clojure.lang.IPending
   (isRealized [this] true)
   clojure.lang.IDeref
   (deref [this] v)
-  Observable
-  (observe [this observer]
-    (invoke-observer observer this)))
+  IRegister
+  (register [this f]
+    (f this)))
 
-(deftype ObservableError [t]
+(deftype RegisteredFnError [t]
   clojure.lang.IPending
   (isRealized [this] true)
   clojure.lang.IDeref
   (deref [this] (throw t))
-  Observable
-  (observe [this observer]
-    (invoke-observer observer this)))
+  IRegister
+  (register [this f]
+    (f this)))
 
-(defn invoke-observer [f observable]
-  (try (ObservableValue. (f observable))
-       (catch Throwable t
-         (ObservableError. t))))
+(declare pending-promise)
 
-(declare pending-value)
-
-(defn register-observer [qref vref observer]
-  (or (dosync (when @qref
-                (let [pv (pending-value)
-                      f (fn [v] (feed pv (invoke-observer observer v)))]
-                  (alter qref conj f)
-                  pv)))
-      (invoke-observer observer @vref)))
-
-(defn notify-observers [qref vref]
-  (doseq [f (dosync (let [q @qref] (ref-set qref nil) q))]
-    (f @vref)))
-
-(deftype PendingValue [vpromise qref]
+(deftype PendingPromise [d v q]
   clojure.lang.IPending
-  (isRealized [this] (.isRealized vpromise))
+  (isRealized [this] (zero? (.getCount d)))
   clojure.lang.IDeref
-  (deref [this] @@vpromise)
-  Observable
-  (observe [this observer]
-    (register-observer qref vpromise observer))
-  Feeder
-  (feed [this observable]
-    (deliver vpromise observable)
-    (notify-observers qref vpromise)))
+  (deref [this] (.await d) @v)
+  clojure.lang.IFn
+  (invoke [this x]
+    (when-let [fs (dosync
+                   (when @q
+                     (let [qq @q]
+                       (ref-set q nil)
+                       (ref-set v x)
+                       qq)))]
+      (.countDown d)
+      (doseq [f fs] (f this))
+      this))
+  IRegister
+  (register [this f]
+    (or (dosync (when @q
+                  (let [p (pending-promise)]
+                    (alter q conj #(deliver p @(f %)))
+                    p)))
+        (f this))))
+
+(defn pending-promise []
+  (let [d (java.util.concurrent.CountDownLatch. 1)
+        v (ref nil)
+        q (ref [])]
+    (PendingPromise. d v q)))
+
+(defn invoke-registered-fn [f vref]
+  (try (RealizedValue. (f @vref))
+       (catch Throwable t
+         (RegisteredFnError. t))))
 
 ;;; Public API
 
-(defn pending-value
-  "Returns a new pending value, which is similar to a promise but can
-  be subscribed to."
-  []
-  (PendingValue. (promise) (ref [])))
-
-(defn deliver-value
-  "Deliver a value to a pending-value. Only works once; future calls
-  to the same pending-value are no-ops."
-  [pend x]
-  (feed pend (ObservableValue. x)))
-
-(defn observe-value
-  "Observe a (possibly pending) value pv. Returns a new PendingValue
-  or ObservableValue.  When pv gets a value, invokes f on that value
-  and updates the returned PendingValue.  If pv already has a value,
-  invokes f synchronously."
-  [pv f]
-  (observe pv (comp f deref)))
+(defn observe
+  "Observe a (possibly pending) reference r. Returns a new pending
+  reference.  When r is realized, invokes f on that value and sets the
+  returned reference to f's return value.  If r already has a value,
+  invokes f synchronously and returns its return value wrapped in a
+  reference."
+  [r f]
+  (register r #(invoke-registered-fn f %)))
