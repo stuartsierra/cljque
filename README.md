@@ -20,18 +20,6 @@ Overview
 
 Goals: See [Asynchronous Events](http://dev.clojure.org/display/design/Asynchronous+Events) on the Clojure wiki
 
-Modules:
-
-* cljque-parent - the top-level container for other modules
-* cljque-base - the core library, with no external dependencies
-* cljque-netty - adaptors between the Netty I/O library and Cljque; *currently broken*
-
-Namespaces in cljque-base:
-
-* [cljque.observe](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/observe.clj) - core protocols for generators/consumers of asynchronous events
-* [cljque.push](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/push.clj) - library of functions, similar to Clojure's sequence API, for "push"-style events
-* [cljque.schedule](https://github.com/stuartsierra/cljque/blob/master/modules/cljque-base/src/main/clojure/cljque/schedule.clj) - thin layer over Java's ScheduledThreadPoolExecutor
-
 
 Inspirations / References
 ========================================
@@ -43,11 +31,3 @@ Inspirations / References
 [101 Rx Samples](http://rxwiki.wikidot.com/101samples)
 
 [RxDG] [Rx Design Guidelines](http://blogs.msdn.com/b/rxteam/archive/2010/10/28/rx-design-guidelines.aspx)
-
-
-Differences from Reactive Extensions for .NET
-------------------------------------------------------------
-
-* Rx does not permit any more 'OnNext' events after an 'OnError' event [RxDG sec 4.1]; Cljque permits events to continue after an error.
-* Rx promises that event consumers will not be called on multiple threads simultaneously [RxDG sec 4.2]; Cljque requires the addition of Ageets to ensure serialization.
-* Rx permits you to specify a Scheduler to execute the callback; Cljque does not
