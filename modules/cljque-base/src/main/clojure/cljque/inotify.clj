@@ -23,7 +23,7 @@
         @v)
       Register
       (register [this observer]
-        (when-not (dosync (when-not @v
+        (when-not (dosync (when @q
                             (alter q conj observer)))
           (notify observer this)
           this))
