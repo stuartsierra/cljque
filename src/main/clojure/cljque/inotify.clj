@@ -122,8 +122,9 @@
                   nil
                   (or @r (ref-set r (active-cons))))))
       (seq [this]
-        (clojure.core/cons (clojure.core/first this)
-                           (clojure.core/rest this)))
+        (when (rest this)
+          (clojure.core/cons (clojure.core/first this)
+                             (clojure.core/rest this))))
       (count [this]
         (clojure.core/count this))
       (cons [this o]
