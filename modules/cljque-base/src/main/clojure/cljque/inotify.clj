@@ -3,6 +3,9 @@
 (defprotocol Supply
   (supply [ipending value]))
 
+(defprotocol Terminate
+  (terminate [ipending]))
+
 (defprotocol Notify
   (notify [observer ipending]))
 
@@ -68,3 +71,64 @@
                              (notify observer this))))
         this))))
 
+
+(defn active-cons []
+  (let [latch (java.util.concurrent.CountDownLatch. 1)
+        q (ref [])
+        v (ref nil)
+        r (ref nil)]
+    (reify
+      Register
+      (register [this observer]
+        (when-not (dosync (when @q
+                            (alter q conj observer)))
+          (when-let [n (notify observer this)]
+            (register (rest this) n))
+          this))
+      Supply
+      (supply [this x]
+        (if-let [watchers (dosync (when @q
+                                      (ref-set v x)
+                                      (let [dq @q]
+                                        (ref-set q nil)
+                                        dq)))]
+          (do (.countDown latch)
+              (doseq [w watchers]
+                (when-let [n (notify w this)]
+                  (register (rest this) n))))
+          (supply (rest this) x))
+        this)
+      Terminate
+      (terminate [this]
+        (if-let [watchers (dosync (when @q
+                                    (ref-set v nil)
+                                    (ref-set r false)
+                                    (let [dq @q]
+                                      (ref-set q nil)
+                                      dq)))]
+          (do (.countDown latch)
+              (doseq [w watchers]
+                (notify w nil)))
+          (terminate (rest this))))
+      clojure.lang.IPending
+      (isRealized [this]
+        (zero? (.getCount latch)))
+      clojure.lang.ISeq
+      (first [this]
+        (.await latch)
+        @v)
+      (more [this]
+        (dosync (if (false? @r)
+                  nil
+                  (or @r (ref-set r (active-cons))))))
+      (seq [this]
+        (clojure.core/cons (clojure.core/first this)
+                           (clojure.core/rest this)))
+      (count [this]
+        (clojure.core/count this))
+      (cons [this o]
+        (clojure.core/cons o this))
+      (empty [this]
+        (active-cons))
+      (equiv [this that]
+        (clojure.core/= (clojure.core/seq this) (clojure.core/seq that))))))
