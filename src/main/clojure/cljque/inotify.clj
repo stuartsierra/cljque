@@ -133,3 +133,31 @@
         (active-cons))
       (equiv [this that]
         (clojure.core/= (clojure.core/seq this) (clojure.core/seq that))))))
+
+(deftype ActiveSeqSink [current]
+  Supply
+  (supply [this x]
+    (swap! current
+           (fn [state]
+             (supply state x)
+             (rest state)))))
+
+(deftype NextReceiver [f])
+
+(defn next-receiver [f]
+  (NextReceiver. f))
+
+(defn sink-notifier [sink f]
+  (reify Notify
+    (notify [this that]
+      (loop [xs (f that)]
+        (when-first [x xs]
+          (if (instance? NextReceiver x)
+            (sink-notifier sink (.f x))
+            (do (supply target x)
+                (recur (rest xs)))))))))
+
+(defn postpone-seq [source f]
+  (let [target (active-cons)]
+    (register source (target-seq-notifier target f))
+    target))
