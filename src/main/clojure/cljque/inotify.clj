@@ -72,92 +72,120 @@
         this))))
 
 
-(defn active-cons []
-  (let [latch (java.util.concurrent.CountDownLatch. 1)
-        q (ref [])
-        v (ref nil)
-        r (ref nil)]
-    (reify
-      Register
-      (register [this observer]
-        (when-not (dosync (when @q
-                            (alter q conj observer)))
-          (when-let [n (notify observer this)]
-            (register (rest this) n))
-          this))
-      Supply
-      (supply [this x]
-        (if-let [watchers (dosync (when @q
-                                      (ref-set v x)
-                                      (let [dq @q]
-                                        (ref-set q nil)
-                                        dq)))]
-          (do (.countDown latch)
-              (doseq [w watchers]
-                (when-let [n (notify w this)]
-                  (register (rest this) n))))
-          (supply (rest this) x))
-        this)
-      Terminate
-      (terminate [this]
-        (if-let [watchers (dosync (when @q
-                                    (ref-set v nil)
-                                    (ref-set r false)
-                                    (let [dq @q]
-                                      (ref-set q nil)
-                                      dq)))]
-          (do (.countDown latch)
-              (doseq [w watchers]
-                (notify w nil)))
-          (terminate (rest this))))
-      clojure.lang.IPending
-      (isRealized [this]
-        (zero? (.getCount latch)))
-      clojure.lang.ISeq
-      (first [this]
-        (.await latch)
-        @v)
-      (more [this]
-        (dosync (if (false? @r)
-                  nil
-                  (or @r (ref-set r (active-cons))))))
-      (seq [this]
-        (when (rest this)
-          (clojure.core/cons (clojure.core/first this)
-                             (clojure.core/rest this))))
-      (count [this]
-        (clojure.core/count this))
-      (cons [this o]
-        (clojure.core/cons o this))
-      (empty [this]
-        (active-cons))
-      (equiv [this that]
-        (clojure.core/= (clojure.core/seq this) (clojure.core/seq that))))))
+(declare active-seq)
 
-(deftype ActiveSeqSink [current]
+(deftype ActiveSeq [latch q v]
+  Register
+  (register [this observer]
+    (when-not (dosync (when @q
+                        (alter q conj observer)))
+      (when-let [n (notify observer this)]
+        (register (rest this) n))
+      this))
   Supply
   (supply [this x]
+    (if-let [watchers (dosync (when @q
+                                (ref-set v x)
+                                (let [dq @q]
+                                  (ref-set q nil)
+                                  dq)))]
+      (do (.countDown latch)
+          (doseq [w watchers]
+            (when-let [n (notify w this)]
+              (register (rest this) n))))
+      (supply (rest this) x))
+    this)
+  Terminate
+  (terminate [this]
+    (if-let [watchers (dosync (when @q
+                                (ref-set v nil)
+                                (let [dq @q]
+                                  (ref-set q nil)
+                                  dq)))]
+      (do (.countDown latch)
+          (doseq [w watchers]
+            (notify w nil)))
+      (terminate (rest this))))
+  clojure.lang.IPending
+  (isRealized [this]
+    (zero? (.getCount latch)))
+  clojure.lang.ISeq
+  (first [this]
+    (.await latch)
+    (first @v))
+  (more [this]
+    (.await latch)
+    (rest @v))
+  (next [this]
+    (seq (rest this)))
+  (seq [this]
+    (.await latch)
+    (when @v
+      (clojure.core/cons (clojure.core/first this)
+                         (clojure.core/rest this))))
+  (count [this]
+    (clojure.core/count this))
+  (cons [this o]
+    (clojure.core/cons o this))
+  (empty [this]
+    (active-seq))
+  (equiv [this that]
+    (and (realized? this)
+         (if (instance? clojure.lang.ISeq that)
+           (= (seq this) (seq that))
+           false))))
+
+(defn active-seq []
+  (let [latch (java.util.concurrent.CountDownLatch. 1)
+        q (ref [])
+        v (ref nil)]
+    (ActiveSeq. latch q v)))
+
+(defmethod clojure.core/print-method ActiveSeq [x writer]
+  (.write writer (str "#<ActiveSeq "
+                      (if (realized? x)
+                        (first x)
+                        :pending)
+                      ">")))
+
+(deftype Pump [current]
+  Register
+  (register [this inotify]
+    (register @current inotify))
+  Supply
+  (supply [this x]
+    (supply @current (cons x (active-seq)))
     (swap! current
            (fn [state]
-             (supply state x)
-             (rest state)))))
+             (if (realized? state)
+               (recur (rest state))
+               state)))
+    this))
 
-(deftype NextReceiver [f])
+(defn pump
+  ([]
+     (pump (active-seq)))
+  ([s]
+     {:pre [(instance? ActiveSeq s)]}
+     (Pump. (atom s))))
 
-(defn next-receiver [f]
-  (NextReceiver. f))
+(comment
+ (deftype NextReceiver [f])
 
-(defn sink-notifier [sink f]
-  (reify Notify
-    (notify [this that]
-      (loop [xs (f that)]
-        (when-first [x xs]
-          (if (instance? NextReceiver x)
-            (sink-notifier sink (.f x))
-            (do (supply target x)
-                (recur (rest xs)))))))))
+ (defn next-receiver [f]
+   (NextReceiver. f))
 
-(defn postpone-seq [source f]
-  (let [target (active-cons)]
-    (register source (target-seq-notifier target f))
-    target))
+ (defn sink-notifier [sink f]
+   (reify Notify
+     (notify [this that]
+       (loop [xs (f that)]
+         (when-first [x xs]
+           (if (instance? NextReceiver x)
+             (sink-notifier sink (.f x))
+             (do (supply target x)
+                 (recur (rest xs)))))))))
+
+ (defn postpone-seq [source f]
+   (let [target (active-seq)]
+     (register source (target-seq-notifier target f))
+     target)))
