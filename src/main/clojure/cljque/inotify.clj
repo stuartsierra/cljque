@@ -169,6 +169,12 @@
      {:pre [(instance? ActiveSeq s)]}
      (Pump. (atom s))))
 
+(defn siphon "Iterate over an ActiveSeq, return another ActiveSeq."
+  [f s] nil)
+
+(defn sink "Reduce over an ActiveSeq, return an ActivePromise."
+  [f init s] nil)
+
 (comment
  (deftype NextReceiver [f])
 
