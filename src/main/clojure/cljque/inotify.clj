@@ -120,9 +120,7 @@
     (seq (rest this)))
   (seq [this]
     (.await latch)
-    (when @v
-      (clojure.core/cons (clojure.core/first this)
-                         (clojure.core/rest this))))
+    (seq @v))
   (count [this]
     (clojure.core/count this))
   (cons [this o]
@@ -131,9 +129,8 @@
     (active-seq))
   (equiv [this that]
     (and (realized? this)
-         (if (instance? clojure.lang.ISeq that)
-           (= (seq this) (seq that))
-           false))))
+         (instance? clojure.lang.ISeq that)
+         (= (seq this) (seq that)))))
 
 (defn active-seq []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
