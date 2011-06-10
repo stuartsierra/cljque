@@ -72,9 +72,9 @@
         this))))
 
 
-(declare active-seq)
+(declare proseq)
 
-(deftype ActiveSeq [latch q v]
+(deftype PromisedSeq [latch q v]
   Register
   (register [this observer]
     (when-not (dosync (when @q
@@ -126,20 +126,23 @@
   (cons [this o]
     (clojure.core/cons o this))
   (empty [this]
-    (active-seq))
+    (proseq))
   (equiv [this that]
     (and (realized? this)
          (instance? clojure.lang.ISeq that)
          (= (seq this) (seq that)))))
 
-(defn active-seq []
+(defn proseq
+  "Returns a proseq (promised seq). Call supply to provide it with
+  an ISeq."
+  []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
         q (ref [])
         v (ref nil)]
-    (ActiveSeq. latch q v)))
+    (PromisedSeq. latch q v)))
 
-(defmethod clojure.core/print-method ActiveSeq [x writer]
-  (.write writer (str "#<ActiveSeq "
+(defmethod clojure.core/print-method PromisedSeq [x writer]
+  (.write writer (str "#<PromisedSeq "
                       (if (realized? x)
                         (first x)
                         :pending)
@@ -151,7 +154,7 @@
     (register @current inotify))
   Supply
   (supply [this x]
-    (supply @current (cons x (active-seq)))
+    (supply @current (cons x (proseq)))
     (swap! current
            (fn [state]
              ;; Skip realized elements until we reach nil or pending.
@@ -162,15 +165,15 @@
 
 (defn pump
   ([]
-     (pump (active-seq)))
+     (pump (proseq)))
   ([s]
-     {:pre [(instance? ActiveSeq s)]}
+     {:pre [(instance? PromisedSeq s)]}
      (Pump. (atom s))))
 
-(defn siphon "Iterate over an ActiveSeq, return another ActiveSeq."
+(defn siphon "Iterate over an PromisedSeq, return another PromisedSeq."
   [f s] nil)
 
-(defn sink "Reduce over an ActiveSeq, return an ActivePromise."
+(defn sink "Reduce over an PromisedSeq, return an ActivePromise."
   [f init s] nil)
 
 (comment
@@ -190,6 +193,6 @@
                  (recur (rest xs)))))))))
 
  (defn postpone-seq [source f]
-   (let [target (active-seq)]
+   (let [target (proseq)]
      (register source (target-seq-notifier target f))
      target)))
