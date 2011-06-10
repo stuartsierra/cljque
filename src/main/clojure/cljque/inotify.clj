@@ -157,7 +157,8 @@
     (supply @current (cons x (active-seq)))
     (swap! current
            (fn [state]
-             (if (realized? state)
+             ;; Skip realized elements until we reach nil or pending.
+             (if (and state (realized? state))
                (recur (rest state))
                state)))
     this))
