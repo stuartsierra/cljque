@@ -136,14 +136,20 @@
     (register @current inotify))
   Supply
   (supply [this x]
-    (supply @current (cons x (proseq)))
-    (swap! current
-           (fn [state]
-             ;; Skip realized elements until we reach nil or pending.
-             (if (and state (realized? state))
-               (recur (rest state))
-               state)))
-    this))
+    (if (nil? x)
+      (supply @current nil)
+      (do
+        (supply @current (cons x (proseq)))
+        (swap! current
+               (fn [state]
+                 ;; Skip realized elements until we reach nil or pending.
+                 (if (and state (realized? state))
+                   (recur (rest state))
+                   state)))))
+    this)
+  clojure.lang.IDeref
+  (deref [this]
+    @current))
 
 (defn pump
   ([]
