@@ -160,3 +160,23 @@
 
 (defmethod clojure.core/print-method Pump [x writer]
   (.write writer "#<Pump>"))
+
+(defn a-map [f s]
+  (let [p (proseq)]
+    (register s (reify Notify
+                  (notify [this that]
+                    (supply p (when-let [c (seq that)]
+                                (cons (f (first c))
+                                      (a-map f (rest c))))))))
+    p))
+
+(defn a-filter [f s]
+  (let [p (proseq)]
+    (register s (reify Notify
+                  (notify [this that]
+                    (supply p (when-let [c (seq that)]
+                                (if (f (first c))
+                                  (cons (first c)
+                                        (a-filter f (rest c)))
+                                  (a-filter f (rest c))))))))
+    p))
