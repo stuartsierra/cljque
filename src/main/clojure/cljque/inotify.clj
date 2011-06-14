@@ -6,8 +6,51 @@
 (defprotocol Notify
   (notify [observer ipending]))
 
-(defprotocol Register
-  (register [ipending observer]))
+(defprotocol IWait
+  (register [this inotify]
+    "Call notify on inotify when this is ready to proceed.")
+  (ready? [this]
+    "Does this computation have all the values it needs to proceed?")
+  (await [this]
+    "Block until this computation has all the values it needs to proceed."))
+
+(defrecord WaiterState [latch waiting? queue])
+
+(defn waiter-atom []
+  (atom
+   (WaiterState.
+    (java.util.concurrent.CountDownLatch. 1)
+    true
+    [])))
+
+(defn register-waiter [this a inotify]
+  (when-not (:waiting? (swap! a
+                              (fn [state]
+                                (if (:waiting? state)
+                                  (update-in state [:queue] conj inotify)
+                                  state))))
+    (notify inotify this))
+  this)
+
+(defn notify-waiters [this a]
+  (when-not (:waiting? (swap! a
+                              (fn [state]
+                                (if (:waiting? state)
+                                  (assoc state :waiting? false)
+                                  state))))
+    (.countDown (:latch @a))
+    (doseq [w (:watchers @a)]
+      (notify w this))
+    (reset! a nil))
+  this)
+
+(defn call-when-ready
+  "Invoke f when all dependents (implementing IWait) are ready."
+  [dependents f]
+  (if (every? ready? dependents)
+    (f)
+    (let [latch (java.util.concurrent.CountDownLatch. (count dependents))]
+      )))
 
 (defn active-promise []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
