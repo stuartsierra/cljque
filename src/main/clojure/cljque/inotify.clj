@@ -3,11 +3,8 @@
 (defprotocol Supply
   (supply [ipending value]))
 
-(defprotocol Notify
-  (notify [observer ipending]))
-
 (defprotocol Register
-  (register [ipending observer]))
+  (register [ipending f]))
 
 (defn active-promise []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
@@ -22,10 +19,10 @@
         (.await latch)
         @v)
       Register
-      (register [this observer]
+      (register [this f]
         (when-not (dosync (when @q
-                            (alter q conj observer)))
-          (notify observer this)
+                            (alter q conj f)))
+          (f this)
           this))
       Supply
       (supply [this x]
@@ -36,23 +33,21 @@
                                         dq)))]
           (.countDown latch)
           (doseq [w watchers]
-            (notify w this))
+            (w this))
           this)))))
 
 (comment
   (defn postpone [ipending f & args]
     (let [p (active-promise)]
       (register ipending
-                (reify Notify
-                  (notify [this that]
-                    (supply p (apply f @that args)))))
+                (fn [that]
+                  (supply p (apply f @that args))))
       p)))
 
 (defn postpone [source f & args]
   (let [a (atom nil)]
-    (register source (reify Notify
-                       (notify [_ that]
-                         (reset! a (apply f @that args)))))
+    (register source (fn [that]
+                       (reset! a (apply f @that args))))
     (reify
       clojure.lang.IPending
       (isRealized [this]
@@ -62,10 +57,8 @@
         (deref source) ;; blocks
         (deref a))
       Register
-      (register [this observer]
-        (register source (reify Notify
-                           (notify [_ _]
-                             (notify observer this))))
+      (register [this f]
+        (register source (fn [_] (f this)))
         this))))
 
 
@@ -81,13 +74,13 @@
                                     dq)))]
       (.countDown latch)
       (doseq [w watchers]
-        (notify w this)))
+        (w this)))
     this)
   Register
-  (register [this observer]
+  (register [this f]
     (when-not (dosync (when @q
-                        (alter q conj observer)))
-      (notify observer this))
+                        (alter q conj f)))
+      (f this))
     this)
   clojure.lang.IPending
   (isRealized [this]
@@ -132,8 +125,8 @@
 
 (deftype Pump [current]
   Register
-  (register [this inotify]
-    (register @current inotify))
+  (register [this f]
+    (register @current f))
   Supply
   (supply [this x]
     (if (nil? x)
@@ -183,9 +176,8 @@
   (if (realized? s)
     (f s))
   (let [p (proseq)]
-    (register s (reify Notify
-                  (notify [this that]
-                    (supply p (f that)))))
+    (register s (fn [that]
+                  (supply p (f that))))
     (SiphonedSeq. p)))
 
 (defmacro siphon [bindings & body]
