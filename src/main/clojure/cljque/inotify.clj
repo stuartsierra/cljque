@@ -44,160 +44,107 @@
           @v
           timeout-val)))))
 
+(deftype FutureSeq [n]
+  Register
+  (register [this f] (register n (fn [_] (f (seq this)))))
+  clojure.lang.IPending
+  (isRealized [this] (realized? n))
+  clojure.lang.Seqable
+  (seq [this] (seq @n))
+  clojure.lang.ISeq
+  (first [this] (first @n))
+  (more [this] (rest @n))
+  (next [this] (seq (rest @n)))
+  (count [this] (inc (count @n)))
+  (cons [this x] (clojure.lang.Cons. x this))
+  (empty [this] (FutureSeq. (notifier)))
+  (equiv [this that] (and (realized? n)
+                          (= @n that))))
+
+(defn future-seq
+  "Returns a lazy seq on which callbacks can be registered.
+  With an argument, returns a lazy seq backed by the given 
+  notifier."
+  ([] (future-seq (notifier)))
+  ([n] (FutureSeq. n)))
+
+(defn deliver-next [fc x]
+  (deliver (.n fc) (cons x (future-seq))))
+
+(defn deliver-stop [fc]
+  (deliver (.n fc) nil))
+
+(defn pump
+  "Given a future-seq fc, returns a function f.
+
+  (f x) will extend the future-seq by one cons cell containing x.
+
+  (f) will terminate the future-seq."
+  [fc]
+  (let [a (atom fc)]
+    (fn
+      ([] (swap! a (fn [fc] (rest (deliver-stop fc)))))
+      ([x] (swap! a (fn [fc] (rest (deliver-next fc x))))))))
+
 (defn apply-when-realized
   "Returns a notifier which will receive the result of 
-  (apply f @r args) when r becomes realized."
+  (apply f r args) when r becomes realized."
   [r f & args]
   (let [n (notifier)]
-    (register r (fn [v] (deliver n (apply f @v args))))
+    (register r (fn [v] (deliver n (apply f v args))))
     n))
 
-;; (declare proseq)
+(defmacro when-ready
+  "Takes a vector of bindings and a body. Each binding is a pair
+  consisting of a symbol (or destructuring form) and a notifier. When
+  the notifier is realized, it will be bound to the symbol and body
+  will be executed. The return value of body will be delivered to a
+  notifier which is returned from when-ready."
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (if (seq bindings)
+    `(apply-when-realized ~(second bindings)
+                          (fn [~(first bindings)]
+                            (when-ready ~(drop 2 bindings)
+                              ~@body)))
+    `(do ~@body)))
 
-;; (deftype PromisedSeq [latch q v]
-;;   clojure.lang.IFn
-;;   (invoke [this x]
-;;     (when-let [watchers (dosync (when @q
-;;                                   (ref-set v x)
-;;                                   (let [dq @q]
-;;                                     (ref-set q nil)
-;;                                     dq)))]
-;;       (.countDown latch)
-;;       (doseq [w watchers]
-;;         (w this)))
-;;     x)
-;;   Register
-;;   (register [this f]
-;;     (when-not (dosync (when @q
-;;                         (alter q conj f)))
-;;       (f this))
-;;     this)
-;;   clojure.lang.IPending
-;;   (isRealized [this]
-;;     (zero? (.getCount latch)))
-;;   clojure.lang.Seqable
-;;   (seq [this]
-;;     (.await latch)
-;;     (seq @v))
-;;   clojure.lang.ISeq
-;;   (first [this]
-;;     (first (seq this)))
-;;   (more [this]
-;;     (rest (seq this)))
-;;   (next [this]
-;;     (seq (rest this)))
-;;   (count [this]
-;;     (count (seq this)))
-;;   (cons [this o]
-;;     (clojure.lang.Cons. o this))
-;;   (empty [this]
-;;     (proseq))
-;;   (equiv [this that]
-;;     (and (realized? this)
-;;          (instance? clojure.lang.ISeq that)
-;;          (= (seq this) (seq that)))))
+(defn a-map [f ps]
+  (future-seq
+   (when-ready [s ps]
+     (when-let [c (seq s)]
+       (cons (f (first c))
+             (a-map f (rest c)))))))
 
-;; (defn proseq
-;;   "Returns a proseq (promised seq). Call supply to provide it with
-;;   an ISeq."
-;;   []
-;;   (let [latch (java.util.concurrent.CountDownLatch. 1)
-;;         q (ref [])
-;;         v (ref nil)]
-;;     (PromisedSeq. latch q v)))
+(defn a-filter [f ps]
+  (future-seq
+   (when-ready [s ps]
+     (when-let [c (seq s)]
+       (if (f (first c))
+         (cons (first c)
+               (a-filter f (rest c)))
+         (a-filter f (rest c)))))))
 
-;; (defmethod clojure.core/print-method PromisedSeq [x writer]
-;;   (.write writer (str "#<PromisedSeq "
-;;                       (if (realized? x)
-;;                         (first x)
-;;                         :pending)
-;;                       ">")))
-;; (comment
-;;  (deftype Pump [current]
-;;    Register
-;;    (register [this f]
-;;      (register @current f))
-;;    Supply
-;;    (supply [this x]
-;;      (if (nil? x)
-;;        (supply @current nil)
-;;        (do
-;;          (supply @current (cons x (proseq)))
-;;          (swap! current
-;;                 (fn [state]
-;;                   ;; Skip realized elements until we reach nil or pending.
-;;                   (if (and state (realized? state))
-;;                     (recur (rest state))
-;;                     state)))))
-;;      this)
-;;    clojure.lang.IDeref
-;;    (deref [this]
-;;      @current)))
+(defn a-take [n ps]
+  (future-seq
+   (when-ready [s ps]
+     (when-let [c (seq s)]
+       (when (pos? n)
+         (cons (first c) (a-take (dec n) (rest ps))))))))
 
-;; (defn pump
-;;   ([]
-;;      (pump (proseq)))
-;;   ([s]
-;;      {:pre [(instance? PromisedSeq s)]}
-;;      (Pump. (atom s))))
+;; Still TODO:
+;; - better names
+;; - chunked seqs
+;; - exception handling
+;; - registerable futures
+;; - reduce
+;; - cancellable registrations?
+;; - implement java.lang.Future in notifier?
 
-;; (defmethod clojure.core/print-method Pump [x writer]
-;;   (.write writer "#<Pump>"))
+;; Maybe the queue should contain WeakReferences. Then if the result
+;; sequence is not used, the notification never happens.
 
-;; ;; SiphonedSeq does not implement Supply, so you can't inject values
-;; ;; into it.
-;; (deftype SiphonedSeq [p]
-;;   Register
-;;   (register [this that] (register p that))
-;;   clojure.lang.IPending
-;;   (isRealized [this] (realized? p))
-;;   clojure.lang.Seqable
-;;   (seq [this] (seq p))
-;;   clojure.lang.ISeq
-;;   (first [this] (first p))
-;;   (more [this] (rest p))
-;;   (next [this] (next p))
-;;   (count [this] (count p))
-;;   (cons [this that] (cons p that))
-;;   (empty [this] (empty p))
-;;   (equiv [this that] (.equiv p that)))
-
-;; (defn siphon* [f s]
-;;   (if (realized? s)
-;;     (f s))
-;;   (let [p (proseq)]
-;;     (register s (fn [that]
-;;                   (supply p (f that))))
-;;     (SiphonedSeq. p)))
-
-;; (defmacro siphon [bindings & body]
-;;   {:pre [(vector? bindings) (= 2 (count bindings))]}
-;;   `(siphon* (fn [~(first bindings)] ~@body) ~(second bindings)))
-
-;; (defn a-map [f ps]
-;;   (siphon [s ps]
-;;     (when-let [c (seq s)]
-;;       (cons (f (first c))
-;;             (a-map f (rest c))))))
-
-;; (defn a-filter [f ps]
-;;   (siphon [s ps]
-;;     (when-let [c (seq s)]
-;;       (if (f (first c))
-;;         (cons (first c)
-;;               (a-filter f (rest c)))
-;;         (a-filter f (rest c))))))
-
-;; (defn a-take [n ps]
-;;   (siphon [s ps]
-;;     (when-let [c (seq s)]
-;;       (when (pos? n)
-;;         (cons (first c) (a-take (dec n) (rest ps)))))))
-
-;; ;;; Maybe the queue should contain WeakReferences. Then if the result
-;; ;;; sequence is not used, the notification never happens.
-
-;; ;; Local Variables:
-;; ;; mode: clojure
-;; ;; eval: (define-clojure-indent (siphon (quote defun)))
-;; ;; End:
+;; Local Variables:
+;; mode: clojure
+;; eval: (progn (define-clojure-indent (when-ready (quote defun))) (setq inferior-lisp-program "/Users/stuart/src/stuartsierra/cljque/run.sh"))
+;; End:
