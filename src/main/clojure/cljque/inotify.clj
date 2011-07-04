@@ -1,18 +1,25 @@
-(ns cljque.inotify)
+(ns cljque.inotify
+  (:refer-clojure :exclude (promise)))
 
-(defprotocol Register
-  (register [this f]
-    "Register callback f to be invoked on the value of this when it
-    becomes available."))
+(defprotocol INotify
+  (register [notifier f]
+    "Register callback f on notifier. When notifier has a value, it
+    will execute (f notifier), which should not throw exceptions. If
+    notifier already has a value, executes (f notifier)
+    immediately. Returns notifier."))
 
-(defn notifier
-  "Returns a promise on which callbacks can be registered."
+(defn promise
+  "Returns a promise object that can be read with deref/@, and set,
+  once only, with deliver. Calls to deref/@ prior to delivery will
+  block, unless the variant of deref with timeout is used. All
+  subsequent derefs will return the same delivered value without
+  blocking. See also - realized? and register."
   []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
-        q (ref []) ;; make this a Java Queue?
-        v (ref nil)] ;; make this an atom, use the Queue as a marker?
+        q (ref [])
+        v (ref nil)]
     (reify
-      Register
+      INotify
       (register [this f]
         (when-not (dosync (when @q
                             (alter q conj f)))
@@ -31,10 +38,10 @@
             (w this))
           x))
       clojure.lang.IPending
-      (isRealized [this]
+      (isRealized [_]
         (zero? (.getCount latch)))
       clojure.lang.IDeref
-      (deref [this]
+      (deref [_]
         (.await latch)
         @v)
       clojure.lang.IBlockingDeref
@@ -44,8 +51,35 @@
           @v
           timeout-val)))))
 
+(defn apply-when-notified
+  "Returns a promise which will receive the result of 
+  (apply f inotify args) when inotify notifies. Any exception thrown
+  by f will be caught and delivered to the promise."
+  [inotify f & args]
+  (let [p (promise)]
+    (register inotify
+              (fn [v] (deliver p (try (apply f v args)
+                                      (catch Throwable t t)))))
+    p))
+
+(defmacro when-ready
+  "Takes a vector of bindings and a body. Each binding is a pair
+  consisting of a symbol and a notifier. When the notifier notifies,
+  it will be bound to the symbol and body will be executed. The return
+  value of body will be delivered to a promise which is returned from
+  when-ready. Any exception thrown in body will be caught and
+  delivered to the promise."
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (if (seq bindings)
+    `(apply-when-notified ~(second bindings)
+                          (fn [~(first bindings)]
+                            (when-ready ~(drop 2 bindings)
+                              ~@body)))
+    `(do ~@body)))
+
 (deftype FutureSeq [n]
-  Register
+  INotify
   (register [this f] (register n (fn [_] (f (seq this)))))
   clojure.lang.IPending
   (isRealized [this] (realized? n))
@@ -57,92 +91,104 @@
   (next [this] (seq (rest @n)))
   (count [this] (inc (count @n)))
   (cons [this x] (clojure.lang.Cons. x this))
-  (empty [this] (FutureSeq. (notifier)))
+  (empty [this] (FutureSeq. (promise)))
   (equiv [this that] (and (realized? n)
                           (= @n that))))
 
 (defn future-seq
-  "Returns a lazy seq on which callbacks can be registered.
-  With an argument, returns a lazy seq backed by the given 
-  notifier."
-  ([] (future-seq (notifier)))
+  "Returns a lazy seq which implements INotify. With an argument,
+  returns a lazy seq backed by the given notifier. Calls to any
+  sequence functions will block until the seq is realized.
+  See also deliver-next, deliver-stop, and pump."
+  ([] (future-seq (promise)))
   ([n] (FutureSeq. n)))
 
-(defn deliver-next [fc x]
-  (deliver (.n fc) (cons x (future-seq))))
+(defmethod clojure.core/print-method FutureSeq [x writer]
+  (.write writer (str "#<FutureSeq "
+                      (if (realized? x) (first x) :pending) ">")))
 
-(defn deliver-stop [fc]
-  (deliver (.n fc) nil))
+(defn deliver-next
+  "Extends a future-seq by delivering one Cons cell containing x and
+  another future-seq."
+  [fseq x]
+  (deliver (.n fseq) (cons x (future-seq))))
+
+(defn deliver-stop
+  "Ends a future-seq by delivering nil."
+  [fseq]
+  (deliver (.n fseq) nil))
 
 (defn pump
-  "Given a future-seq fc, returns a function f.
+  "Given a future-seq, returns a stateful function f which can insert
+  new values into the seq.
 
-  (f x) will extend the future-seq by one cons cell containing x.
+  (f x) will extend the future-seq by one cons cell containing x and
+  advance f to the next future-seq.
 
   (f) will terminate the future-seq."
-  [fc]
-  (let [a (atom fc)]
+  [fseq]
+  (let [a (atom fseq)]
     (fn
-      ([] (swap! a (fn [fc] (rest (deliver-stop fc)))))
-      ([x] (swap! a (fn [fc] (rest (deliver-next fc x))))))))
+      ([] (swap! a (fn [fs] (rest (deliver-stop fs)))))
+      ([x] (swap! a (fn [fs] (rest (deliver-next fs x))))))))
 
-(defn apply-when-realized
-  "Returns a notifier which will receive the result of 
-  (apply f r args) when r becomes realized."
-  [r f & args]
-  (let [n (notifier)]
-    (register r (fn [v] (deliver n (apply f v args))))
-    n))
-
-(defmacro when-ready
-  "Takes a vector of bindings and a body. Each binding is a pair
-  consisting of a symbol (or destructuring form) and a notifier. When
-  the notifier is realized, it will be bound to the symbol and body
-  will be executed. The return value of body will be delivered to a
-  notifier which is returned from when-ready."
-  [bindings & body]
-  {:pre [(even? (count bindings))]}
-  (if (seq bindings)
-    `(apply-when-realized ~(second bindings)
-                          (fn [~(first bindings)]
-                            (when-ready ~(drop 2 bindings)
-                              ~@body)))
-    `(do ~@body)))
-
-(defn a-map [f ps]
+(defn future-map [f fseq]
   (future-seq
-   (when-ready [s ps]
+   (when-ready [s fseq]
      (when-let [c (seq s)]
        (cons (f (first c))
-             (a-map f (rest c)))))))
+             (future-map f (rest c)))))))
 
-(defn a-filter [f ps]
+(defn future-filter [f fseq]
   (future-seq
-   (when-ready [s ps]
+   (when-ready [s fseq]
      (when-let [c (seq s)]
        (if (f (first c))
          (cons (first c)
-               (a-filter f (rest c)))
-         (a-filter f (rest c)))))))
+               (future-filter f (rest c)))
+         (future-filter f (rest c)))))))
 
-(defn a-take [n ps]
+(defn future-take [n fseq]
   (future-seq
-   (when-ready [s ps]
+   (when-ready [s fseq]
      (when-let [c (seq s)]
        (when (pos? n)
-         (cons (first c) (a-take (dec n) (rest ps))))))))
+         (cons (first c) (future-take (dec n) (rest c))))))))
+
+(comment
+;; Sample usage
+  (def a (future-seq))
+  (def b (future-map #(* 5 %) a))
+  (def c (future-filter even? b))
+  (def d (future-take 10 c))
+
+  (def p (pump a))
+  (dotimes [i 100] (p i))
+  (p)
+
+  (assert (= (seq a) (range 100)))
+  (assert (= (seq b) (map #(* 5 %) (range 100))))
+  (assert (= (seq c) (filter even? b)))
+  (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
+;; end comment
+  )
 
 ;; Still TODO:
-;; - better names
-;; - chunked seqs
-;; - exception handling
-;; - registerable futures
-;; - reduce
-;; - cancellable registrations?
-;; - implement java.lang.Future in notifier?
+;; - future-reduce
+;; - deliver chunked seqs to future-seqs
+;; - extend INotify to futures
 
-;; Maybe the queue should contain WeakReferences. Then if the result
-;; sequence is not used, the notification never happens.
+;; Other possibilities:
+;; - better names?
+;; - support register on things which do not implement INotify?
+;;   - future-seq fns would work on regular seqs
+;;   - They would invoke callback immediately
+;; - promise re-throws exception on deref?
+;; - cancellable registrations?
+;; - Use WeakReferences for callback queue?
+;;   - if result is not used, notification can be skipped
+;; - make promise use an atom instead of refs?
+
 
 ;; Local Variables:
 ;; mode: clojure
