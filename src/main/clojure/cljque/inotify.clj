@@ -33,15 +33,17 @@
       ;; Implementation of IFn for deliver:
       clojure.lang.IFn
       (invoke [this x]
-        (when-let [watchers (dosync (when @q
-                                      (ref-set v x)
-                                      (let [dq @q]
-                                        (ref-set q nil)
-                                        dq)))]
-          (.countDown latch)
-          (doseq [w watchers]
-            (w this))
-          x))
+        (if (ready? x)
+         (when-let [watchers (dosync (when @q
+                                       (ref-set v x)
+                                       (let [dq @q]
+                                         (ref-set q nil)
+                                         dq)))]
+           (.countDown latch)
+           (doseq [w watchers]
+             (w this))
+           x)
+         (register x (fn [y] (deliver this y)))))
       clojure.lang.IPending
       (isRealized [_]
         (zero? (.getCount latch)))
