@@ -21,29 +21,25 @@
   blocking. See also - realized? and register."
   []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
-        q (ref [])
-        v (ref nil)]
+        q (java.util.concurrent.ConcurrentLinkedQueue.)
+        v (atom q)]
+    (.add q (fn [_] (.countDown latch)))
     (reify
       INotify
       (register [this f]
-        (when-not (dosync (when @q
-                            (alter q conj f)))
-          (f this)
-          this))
+        (.add q f)
+        (when (not= q @v)
+          (.remove q)
+          (f this))
+        this)
       ;; Implementation of IFn for deliver:
       clojure.lang.IFn
       (invoke [this x]
         (if (ready? x)
-         (when-let [watchers (dosync (when @q
-                                       (ref-set v x)
-                                       (let [dq @q]
-                                         (ref-set q nil)
-                                         dq)))]
-           (.countDown latch)
-           (doseq [w watchers]
-             (w this))
-           x)
-         (register x (fn [y] (deliver this y)))))
+          (when (compare-and-set! v q x)
+            (doseq [w q] (w this))
+            x)
+          (register x (fn [y] (deliver this y)))))
       clojure.lang.IPending
       (isRealized [_]
         (zero? (.getCount latch)))
