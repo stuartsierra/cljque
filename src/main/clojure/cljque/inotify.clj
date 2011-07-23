@@ -4,8 +4,8 @@
 (defprotocol INotify
   (register [notifier f]
     "Register callback f on notifier. When notifier has a value, it
-    will execute (f notifier), which should not throw exceptions. If
-    notifier already has a value, executes (f notifier)
+    will execute (f value), which should not throw exceptions. If
+    notifier already has a value, executes (f value)
     immediately. Returns notifier."))
 
 (defn ready? [x]
@@ -30,14 +30,14 @@
         (.add q f)
         (when (not= q @v)
           (.remove q)
-          (f this))
+          (f @v))
         this)
       ;; Implementation of IFn for deliver:
       clojure.lang.IFn
       (invoke [this x]
         (if (ready? x)
           (when (compare-and-set! v q x)
-            (doseq [w q] (w this))
+            (doseq [w q] (w x))
             x)
           (register x (fn [y] (deliver this y)))))
       clojure.lang.IPending
