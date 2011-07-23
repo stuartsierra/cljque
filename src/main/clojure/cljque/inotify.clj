@@ -116,14 +116,14 @@
 
 (defn deliver-next
   "Extends a future-seq by delivering one Cons cell containing x and
-  another future-seq."
+  another future-seq. Returns the next future-seq."
   [fseq x]
-  (deliver (.n fseq) (cons x (future-seq))))
+  (rest (deliver (.n fseq) (cons x (future-seq)))))
 
 (defn deliver-stop
-  "Ends a future-seq by delivering nil."
+  "Ends a future-seq by delivering nil. Returns nil."
   [fseq]
-  (deliver (.n fseq) nil))
+  (rest (deliver (.n fseq) nil)))
 
 (defn pump
   "Given a future-seq, returns a stateful function f which can insert
@@ -136,8 +136,8 @@
   [fseq]
   (let [a (atom fseq)]
     (fn
-      ([] (swap! a (fn [fs] (rest (deliver-stop fs)))))
-      ([x] (swap! a (fn [fs] (rest (deliver-next fs x))))))))
+      ([] (swap! a deliver-stop))
+      ([x] (swap! a deliver-next x)))))
 
 (defn future-map [f fseq]
   (future-seq
