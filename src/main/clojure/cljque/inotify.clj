@@ -32,8 +32,7 @@
           (.remove q)
           (f @v))
         this)
-      ;; Implementation of IFn for deliver:
-      clojure.lang.IFn
+      clojure.lang.IFn  ;; deliver
       (invoke [this x]
         (if (ready? x)
           (when (compare-and-set! v q x)
@@ -169,7 +168,7 @@
          (future-reduce f (f val (first c)) (rest c))
          val))))
 
-(comment
+(defn testme []
 ;; Sample usage
   (def a (future-seq))
   (def b (future-map #(* 5 %) a))
@@ -185,12 +184,9 @@
   (assert (= (seq b) (map #(* 5 %) (range 100))))
   (assert (= (seq c) (filter even? b)))
   (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
-  (assert (= 450 @e))
-;; end comment
-  )
+  (assert (= 450 @e)))
 
 ;; Still TODO:
-;; - future-reduce
 ;; - deliver chunked seqs to future-seqs
 ;; - extend INotify to futures
 
