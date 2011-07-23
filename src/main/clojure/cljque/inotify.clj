@@ -168,6 +168,28 @@
          (future-reduce f (f val (first c)) (rest c))
          val))))
 
+(defn sink
+  "Calls f for side effects on each successive value of fseq. Returns
+  a Closeable, calling .close stops reacting to new values.
+
+  Optional :error-handler is a function which will be called with the
+  current future-seq and the exception. Default error handler prints a
+  stacktrace to STDERR."
+  [f fseq & options]
+  (let [{:keys [error-handler]
+         :or {error-handler (fn [_ e] (.printStackTrace e))}}
+        options
+        open? (atom true)]
+    (register fseq
+              (fn thisfn [s]
+                (when @open?
+                 (try (f (first s))
+                      (register (rest s) thisfn)
+                      (catch Throwable t
+                        (error-handler s t))))))
+    (reify java.io.Closeable
+      (close [this] (reset! open? false)))))
+
 (defn testme []
 ;; Sample usage
   (def a (future-seq))
