@@ -109,31 +109,6 @@
   (.write writer (str "#<FutureSeq "
                       (if (realized? x) (first x) :pending) ">")))
 
-(defn deliver-next
-  "Extends a future-seq by delivering one Cons cell containing x and
-  another future-seq. Returns the next future-seq."
-  [fseq x]
-  (rest (deliver (.n fseq) (cons x (future-seq)))))
-
-(defn deliver-stop
-  "Ends a future-seq by delivering nil. Returns nil."
-  [fseq]
-  (rest (deliver (.n fseq) nil)))
-
-(defn pump
-  "Given a future-seq, returns a stateful function f which can insert
-  new values into the seq.
-
-  (f x) will extend the future-seq by one cons cell containing x and
-  advance f to the next future-seq.
-
-  (f) will terminate the future-seq."
-  [fseq]
-  (let [a (atom fseq)]
-    (fn
-      ([] (swap! a deliver-stop))
-      ([x] (swap! a deliver-next x)))))
-
 (defn future-map [f fseq]
   (future-seq
    (when-ready [s fseq]
@@ -168,6 +143,40 @@
          (future-reduce f (f val (first c)) (rest c))
          val))))
 
+(defn deliver-next
+  "Extends a future-seq by delivering one Cons cell containing x and
+  another future-seq. Returns the next future-seq."
+  [fseq x]
+  (rest (deliver (.n fseq) (cons x (future-seq)))))
+
+(defn deliver-stop
+  "Ends a future-seq by delivering nil. Returns nil."
+  [fseq]
+  (rest (deliver (.n fseq) nil)))
+
+(defn pump
+  "Given an unrealized future-seq, returns a mutable reference p which
+  can inject new values into the future-seq.
+
+  (deliver p x) will extend the future-seq by one cons cell containing
+  x and another future-seq.
+
+  (.close p) will terminate the future-seq.
+
+  The currently pending future-seq is always available as @p."
+  ([] (pump (future-seq)))
+  ([fseq]
+     (let [a (atom fseq)]
+       (reify
+         clojure.lang.IDeref
+         (deref [this] @a)
+         clojure.lang.IFn ;; deliver
+         (invoke [this x]
+           (swap! a deliver-next x))
+         java.io.Closeable
+         (close [this]
+           (swap! a deliver-stop))))))
+
 (defn sink
   "Calls f for side effects on each successive value of fseq. Returns
   a Closeable, calling .close stops reacting to new values.
@@ -199,8 +208,8 @@
   (def e (future-reduce + d))
 
   (def p (pump a))
-  (dotimes [i 100] (p i))
-  (p)
+  (dotimes [i 100] (deliver p i))
+  (.close p)
 
   (assert (= (seq a) (range 100)))
   (assert (= (seq b) (map #(* 5 %) (range 100))))
