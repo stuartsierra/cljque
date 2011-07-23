@@ -162,12 +162,24 @@
        (when (pos? n)
          (cons (first c) (future-take (dec n) (rest c))))))))
 
+(defn future-reduce
+  ([f fseq]
+     (when-ready [s fseq]
+       (when-let [c (seq s)]
+         (future-reduce f (first c) (rest c)))))
+  ([f val fseq]
+     (when-ready [s fseq]
+       (if-let [c (seq s)]
+         (future-reduce f (f val (first c)) (rest c))
+         val))))
+
 (comment
 ;; Sample usage
   (def a (future-seq))
   (def b (future-map #(* 5 %) a))
   (def c (future-filter even? b))
   (def d (future-take 10 c))
+  (def e (future-reduce + d))
 
   (def p (pump a))
   (dotimes [i 100] (p i))
@@ -177,6 +189,7 @@
   (assert (= (seq b) (map #(* 5 %) (range 100))))
   (assert (= (seq c) (filter even? b)))
   (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
+  (assert (= 450 @e))
 ;; end comment
   )
 
