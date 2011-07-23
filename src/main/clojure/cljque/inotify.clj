@@ -8,6 +8,11 @@
     notifier already has a value, executes (f notifier)
     immediately. Returns notifier."))
 
+(defn ready? [x]
+  (if (instance? clojure.lang.IPending x)
+    (realized? x)
+    true))
+
 (defn promise
   "Returns a promise object that can be read with deref/@, and set,
   once only, with deliver. Calls to deref/@ prior to delivery will
