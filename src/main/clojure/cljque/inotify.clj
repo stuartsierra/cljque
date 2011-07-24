@@ -1,5 +1,4 @@
-(ns cljque.inotify
-  (:refer-clojure :exclude (promise)))
+(ns cljque.inotify)
 
 (defprotocol INotify
   (register [notifier f]
@@ -8,20 +7,24 @@
     notifier already has a value, executes (f value)
     immediately. Returns notifier."))
 
+(defprotocol ISupply
+  (supply [recipient x]
+    "Submit a value x to recipient."))
+
 (defn ready? [x]
   (if (instance? clojure.lang.IPending x)
     (realized? x)
     true))
 
-(defn promise
-  "Returns a promise object that can be read with deref/@, and set,
-  once only, with deliver. Calls to deref/@ prior to delivery will
+(defn notifier
+  "Returns a notifier object that can be read with deref/@, and set,
+  once only, with supply. Calls to deref/@ prior to supply will
   block, unless the variant of deref with timeout is used. All
-  subsequent derefs will return the same delivered value without
+  subsequent derefs will return the same supplied value without
   blocking. 
 
-  Calling deliver on a promise P1 with another promise P2 as the value
-  will register P1 to receive the value delivered to P2.
+  Calling supply on a notifier A with another notifier B as the value
+  will register A to receive the value supplied to B.
 
   See also - realized? and register."
   []
@@ -32,19 +35,19 @@
     (reify
       INotify
       (register [this f]
-        ;; TODO: fix race condition with 'deliver'
+        ;; TODO: fix race condition with 'supply'
         (.add q f)
         (when (not= q @v)
           (.remove q)
           (f @v))
         this)
-      clojure.lang.IFn  ;; deliver
-      (invoke [this x]
+      ISupply
+      (supply [this x]
         (if (ready? x)
           (when (compare-and-set! v q x)
             (doseq [w q] (w x))
             x)
-          (register x (fn [y] (deliver this y)))))
+          (register x (fn [y] (supply this y)))))
       clojure.lang.IPending
       (isRealized [_]
         (zero? (.getCount latch)))
@@ -60,13 +63,13 @@
           timeout-val)))))
 
 (defn apply-when-notified
-  "Returns a promise which will receive the result of 
+  "Returns a notifier which will receive the result of 
   (apply f inotify args) when inotify notifies. Any exception thrown
-  by f will be caught and delivered to the promise."
+  by f will be caught and supplyed to the notifier."
   [inotify f & args]
-  (let [p (promise)]
+  (let [p (notifier)]
     (register inotify
-              (fn [v] (deliver p (try (apply f v args)
+              (fn [v] (supply p (try (apply f v args)
                                       (catch Throwable t t)))))
     p))
 
@@ -74,9 +77,9 @@
   "Takes a vector of bindings and a body. Each binding is a pair
   consisting of a symbol and a notifier. When the notifier notifies,
   it will be bound to the symbol and body will be executed. The return
-  value of body will be delivered to a promise which is returned from
+  value of body will be supplied to a notifier which is returned from
   when-ready. Any exception thrown in body will be caught and
-  delivered to the promise."
+  supplied to the notifier."
   [bindings & body]
   {:pre [(even? (count bindings))]}
   (if (seq bindings)
@@ -99,7 +102,7 @@
   (next [this] (seq (rest @n)))
   (count [this] (inc (count @n)))
   (cons [this x] (clojure.lang.Cons. x this))
-  (empty [this] (FutureSeq. (promise)))
+  (empty [this] (FutureSeq. (notifier)))
   (equiv [this that] (and (realized? n)
                           (= @n that))))
 
@@ -107,8 +110,8 @@
   "Returns a lazy seq which implements INotify. With an argument,
   returns a lazy seq backed by the given notifier. Calls to any
   sequence functions will block until the seq is realized.
-  See also deliver-next, deliver-stop, and pump."
-  ([] (future-seq (promise)))
+  See also supply-next, supply-stop, and pump."
+  ([] (future-seq (notifier)))
   ([n] (FutureSeq. n)))
 
 (defmethod clojure.core/print-method FutureSeq [x writer]
@@ -149,22 +152,22 @@
          (future-reduce f (f val (first c)) (rest c))
          val))))
 
-(defn deliver-next
-  "Extends a future-seq by delivering one Cons cell containing x and
+(defn supply-next
+  "Extends a future-seq by supplying one Cons cell containing x and
   another future-seq. Returns the next future-seq."
   [fseq x]
-  (rest (deliver (.n fseq) (cons x (future-seq)))))
+  (rest (supply (.n fseq) (cons x (future-seq)))))
 
-(defn deliver-stop
-  "Ends a future-seq by delivering nil. Returns nil."
+(defn supply-stop
+  "Ends a future-seq by supplying nil. Returns nil."
   [fseq]
-  (rest (deliver (.n fseq) nil)))
+  (rest (supply (.n fseq) nil)))
 
 (defn pump
   "Given an unrealized future-seq, returns a mutable reference p which
   can inject new values into the future-seq.
 
-  (deliver p x) will extend the future-seq by one cons cell containing
+  (supply p x) will extend the future-seq by one cons cell containing
   x and another future-seq.
 
   (.close p) will terminate the future-seq.
@@ -176,12 +179,12 @@
        (reify
          clojure.lang.IDeref
          (deref [this] @a)
-         clojure.lang.IFn ;; deliver
-         (invoke [this x]
-           (swap! a deliver-next x))
+         ISupply
+         (supply [this x]
+           (swap! a supply-next x))
          java.io.Closeable
          (close [this]
-           (swap! a deliver-stop))))))
+           (swap! a supply-stop))))))
 
 (defn sink
   "Calls f for side effects on each successive value of fseq. Returns
@@ -214,7 +217,7 @@
   (def e (future-reduce + d))
 
   (def p (pump a))
-  (dotimes [i 100] (deliver p i))
+  (dotimes [i 100] (supply p i))
   (.close p)
 
   (assert (= (seq a) (range 100)))
@@ -224,7 +227,7 @@
   (assert (= 450 @e)))
 
 ;; Still TODO:
-;; - deliver chunked seqs to future-seqs
+;; - supply chunked seqs to future-seqs
 ;; - extend INotify to futures
 
 ;; Other possibilities:
@@ -233,11 +236,11 @@
 ;; - support register on things which do not implement INotify?
 ;;   - future-seq fns would work on regular seqs
 ;;   - They would invoke callback immediately
-;; - promise re-throws exception on deref?
+;; - notifier re-throws exception on deref?
 ;; - cancellable registrations?
 ;; - Use WeakReferences for callback queue?
 ;;   - if result is not used, notification can be skipped
-;; - make promise use an atom instead of refs?
+;; - make notifier use an atom instead of refs?
 
 
 ;; Local Variables:
