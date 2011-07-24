@@ -32,6 +32,7 @@
     (reify
       INotify
       (register [this f]
+        ;; TODO: fix race condition with 'deliver'
         (.add q f)
         (when (not= q @v)
           (.remove q)
