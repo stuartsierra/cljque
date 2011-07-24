@@ -18,7 +18,12 @@
   once only, with deliver. Calls to deref/@ prior to delivery will
   block, unless the variant of deref with timeout is used. All
   subsequent derefs will return the same delivered value without
-  blocking. See also - realized? and register."
+  blocking. 
+
+  Calling deliver on a promise P1 with another promise P2 as the value
+  will register P1 to receive the value delivered to P2.
+
+  See also - realized? and register."
   []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
         q (java.util.concurrent.ConcurrentLinkedQueue.)
@@ -222,6 +227,7 @@
 ;; - extend INotify to futures
 
 ;; Other possibilities:
+;; - wrap lazy-seq around cons cells returned by future-map, etc... ?
 ;; - better names?
 ;; - support register on things which do not implement INotify?
 ;;   - future-seq fns would work on regular seqs
