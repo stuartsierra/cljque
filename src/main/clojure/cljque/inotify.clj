@@ -12,7 +12,7 @@
     "Submit a value x to recipient."))
 
 (defn ready? [x]
-  (if (instance? clojure.lang.IPending x)
+  (if (satisfies? INotify x)
     (realized? x)
     true))
 
