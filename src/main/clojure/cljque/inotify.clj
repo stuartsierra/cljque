@@ -192,10 +192,12 @@
 
   Optional :error-handler is a function which will be called with the
   current future-seq and the exception. Default error handler prints a
-  stacktrace to STDERR."
+  stacktrace to *err*."
   [f fseq & options]
   (let [{:keys [error-handler]
-         :or {error-handler (fn [_ e] (.printStackTrace e))}}
+         :or {error-handler (fn [_ e]
+                              (.printStackTrace
+                               e (java.io.PrintWriter. *err*)))}}
         options
         open? (atom true)]
     (register fseq
