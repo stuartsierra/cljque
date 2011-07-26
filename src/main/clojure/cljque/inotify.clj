@@ -54,12 +54,19 @@
       clojure.lang.IDeref
       (deref [_]
         (.await latch)
-        @v)
+        (let [vv @v]
+          (if (instance? Throwable vv)
+            (throw (Exception. "Deref on failed notifier" vv))
+            vv)))
       clojure.lang.IBlockingDeref
       (deref
         [_ timeout-ms timeout-val]
-        (if (.await latch timeout-ms java.util.concurrent.TimeUnit/MILLISECONDS)
-          @v
+        (if (.await latch timeout-ms
+                    java.util.concurrent.TimeUnit/MILLISECONDS)
+          (let [vv @v]
+            (if (instance? Throwable vv)
+              (throw (Exception. "Deref on failed notifier" vv))
+              vv))
           timeout-val)))))
 
 (defn apply-when-notified
@@ -70,7 +77,7 @@
   (let [p (notifier)]
     (register inotify
               (fn [v] (supply p (try (apply f v args)
-                                      (catch Throwable t t)))))
+                                     (catch Throwable t t)))))
     p))
 
 (defmacro when-ready
@@ -122,16 +129,18 @@
   (future-seq
    (when-ready [s fseq]
      (when-let [c (seq s)]
-       (cons (f (first c))
-             (future-map f (rest c)))))))
+       (lazy-seq
+        (cons (f (first c))
+              (future-map f (rest c))))))))
 
 (defn future-filter [f fseq]
   (future-seq
    (when-ready [s fseq]
      (when-let [c (seq s)]
        (if (f (first c))
-         (cons (first c)
-               (future-filter f (rest c)))
+         (lazy-seq
+          (cons (first c)
+                (future-filter f (rest c))))
          (future-filter f (rest c)))))))
 
 (defn future-take [n fseq]
@@ -139,7 +148,8 @@
    (when-ready [s fseq]
      (when-let [c (seq s)]
        (when (pos? n)
-         (cons (first c) (future-take (dec n) (rest c))))))))
+         (lazy-seq
+          (cons (first c) (future-take (dec n) (rest c)))))))))
 
 (defn future-reduce
   ([f fseq]
@@ -186,6 +196,11 @@
          (close [this]
            (swap! a supply-stop))))))
 
+(defn default-sink-error-handler [s e]
+  (let [err (java.io.PrintWriter. *err*)]
+    (.printStackTrace e err)
+    (.flush err)))
+
 (defn sink
   "Calls f for side effects on each successive value of fseq. Returns
   a Closeable, calling .close stops reacting to new values.
@@ -195,9 +210,7 @@
   stacktrace to *err*."
   [f fseq & options]
   (let [{:keys [error-handler]
-         :or {error-handler (fn [_ e]
-                              (.printStackTrace
-                               e (java.io.PrintWriter. *err*)))}}
+         :or {error-handler default-sink-error-handler}}
         options
         open? (atom true)]
     (register fseq
@@ -228,21 +241,37 @@
   (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
   (assert (= 450 @e)))
 
+(defn testerr []
+  (def a (future-seq))
+  (sink (comp prn inc) a)
+  (def p (pump a))
+  (dotimes [i 5] (supply p i))
+  (supply p "hello")
+  (.close p))
+
+(defn testerr2 []
+  (def a (future-seq))
+  (def b (future-map inc a))
+  (def c (future-filter odd? b))
+  (def p (pump a))
+  (dotimes [i 5] (supply p i))
+  (supply p "hello")
+  (.close p)
+  (prn (seq a))
+  (prn (take 2 c)))
+
 ;; Still TODO:
 ;; - supply chunked seqs to future-seqs
 ;; - extend INotify to futures
 
 ;; Other possibilities:
-;; - wrap lazy-seq around cons cells returned by future-map, etc... ?
 ;; - better names?
 ;; - support register on things which do not implement INotify?
 ;;   - future-seq fns would work on regular seqs
 ;;   - They would invoke callback immediately
-;; - notifier re-throws exception on deref?
 ;; - cancellable registrations?
 ;; - Use WeakReferences for callback queue?
 ;;   - if result is not used, notification can be skipped
-;; - make notifier use an atom instead of refs?
 
 
 ;; Local Variables:
