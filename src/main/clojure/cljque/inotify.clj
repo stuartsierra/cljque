@@ -266,12 +266,20 @@
 
 ;; Other possibilities:
 ;; - better names?
+;;   - latched sequences?
 ;; - support register on things which do not implement INotify?
 ;;   - future-seq fns would work on regular seqs
 ;;   - They would invoke callback immediately
 ;; - cancellable registrations?
 ;; - Use WeakReferences for callback queue?
 ;;   - if result is not used, notification can be skipped
+
+
+;; This is a fully "unmaterialized" abstraction. It separates 
+;; consumption from realization.
+
+;; Special version of "sink" that takes 2 args: an agent and a
+;; function to apply?
 
 
 ;; Local Variables:
