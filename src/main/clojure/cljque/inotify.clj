@@ -29,24 +29,27 @@
   See also - realized? and register."
   []
   (let [latch (java.util.concurrent.CountDownLatch. 1)
-        q (java.util.concurrent.ConcurrentLinkedQueue.)
-        v (atom q)]
-    (.add q (fn [_] (.countDown latch)))
+        q (ref [(fn [_] (.countDown latch))])
+        v (ref latch)]
     (reify
       INotify
       (register [this f]
-        ;; TODO: fix race condition with 'supply'
-        (.add q f)
-        (when (not= q @v)
-          (.remove q)
+        (when-not (dosync
+                   (when (= @v latch)
+                     (alter q conj f)))
           (f @v))
         this)
       ISupply
       (supply [this x]
         (if (ready? x)
-          (when (compare-and-set! v q x)
-            (doseq [w q] (w x))
-            x)
+          (do (doseq [w (dosync
+                         (when (= @v latch)
+                           (let [qq @q]
+                             (ref-set v x)
+                             (ref-set q nil)
+                             qq)))]
+                (w x))
+              x)
           (register x (fn [y] (supply this y)))))
       clojure.lang.IPending
       (isRealized [_]
