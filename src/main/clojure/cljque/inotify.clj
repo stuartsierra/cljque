@@ -113,8 +113,9 @@
   (count [this] (count @n))
   (cons [this x] (clojure.lang.Cons. x this))
   (empty [this] (FutureSeq. (notifier)))
-  (equiv [this that] (and (realized? n)
-                          (= @n that))))
+  (equiv [this that] (if (realized? n)
+                       (= that @n)
+                       (identical? this that))))
 
 (defn future-seq
   "Returns a lazy seq which implements INotify. With an argument,
