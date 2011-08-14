@@ -108,6 +108,7 @@
   (seq [this] (seq @n))
   clojure.lang.ISeq
   (first [this] (first @n))
+  ;; Ensure rest is always wrapped in a FutureCons?
   (more [this] (rest @n))
   (next [this] (seq (rest @n)))
   (count [this] (count @n))
@@ -123,6 +124,7 @@
   sequence functions will block until the seq is realized.
   See also supply-next, supply-stop, and pump."
   ([] (future-seq (notifier)))
+  ;; Check for Notifier or realized Seq?
   ([n] (FutureSeq. n)))
 
 (defmethod clojure.core/print-method FutureSeq [x writer]
