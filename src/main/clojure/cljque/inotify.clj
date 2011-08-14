@@ -110,7 +110,7 @@
   (first [this] (first @n))
   (more [this] (rest @n))
   (next [this] (seq (rest @n)))
-  (count [this] (inc (count @n)))
+  (count [this] (count @n))
   (cons [this x] (clojure.lang.Cons. x this))
   (empty [this] (FutureSeq. (notifier)))
   (equiv [this that] (and (realized? n)
