@@ -17,25 +17,21 @@
     true))
 
 (defn notifier
-  "Returns a notifier object that can be read with deref/@, and set,
-  once only, with supply. Calls to deref/@ prior to supply will
-  block, unless the variant of deref with timeout is used. All
-  subsequent derefs will return the same supplied value without
-  blocking. 
+  "Returns a notifier object that can be read with register and set,
+  once only, with supply.
 
   Calling supply on a notifier A with another notifier B as the value
   will register A to receive the value supplied to B.
 
   See also - realized? and register."
   []
-  (let [latch (java.util.concurrent.CountDownLatch. 1)
-        q (ref [(fn [_] (.countDown latch))])
-        v (ref latch)]
+  (let [q (ref [])
+        v (ref q)]
     (reify
       INotify
       (register [this f]
         (when-not (dosync
-                   (when (= @v latch)
+                   (when (= @v q)
                      (alter q conj f)))
           (f @v))
         this)
@@ -43,7 +39,7 @@
       (supply [this x]
         (if (ready? x)
           (do (doseq [w (dosync
-                         (when (= @v latch)
+                         (when (= @v q)
                            (let [qq @q]
                              (ref-set v x)
                              (ref-set q nil)
@@ -53,24 +49,7 @@
           (register x (fn [y] (supply this y)))))
       clojure.lang.IPending
       (isRealized [_]
-        (zero? (.getCount latch)))
-      clojure.lang.IDeref
-      (deref [_]
-        (.await latch)
-        (let [vv @v]
-          (if (instance? Throwable vv)
-            (throw (Exception. "Deref on failed notifier" vv))
-            vv)))
-      clojure.lang.IBlockingDeref
-      (deref
-        [_ timeout-ms timeout-val]
-        (if (.await latch timeout-ms
-                    java.util.concurrent.TimeUnit/MILLISECONDS)
-          (let [vv @v]
-            (if (instance? Throwable vv)
-              (throw (Exception. "Deref on failed notifier" vv))
-              vv))
-          timeout-val)))))
+        (not= @v q)))))
 
 (defn apply-when-notified
   "Returns a notifier which will receive the result of 
