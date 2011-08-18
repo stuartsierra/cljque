@@ -51,15 +51,21 @@
       (isRealized [_]
         (not= @v q)))))
 
+(deftype DerivedNotifier [source f v]
+  INotify
+  (register [this g]
+    (register source (fn [_] (g @v))))
+  clojure.lang.IFn
+  (invoke [this x]
+    (reset! v (try (f x) (catch Throwable t t)))))
+
 (defn apply-when-notified
   "Returns a notifier which will receive the result of 
   (apply f inotify args) when inotify notifies. Any exception thrown
   by f will be caught and supplyed to the notifier."
-  [inotify f & args]
-  (let [p (notifier)]
-    (register inotify
-              (fn [v] (supply p (try (apply f v args)
-                                     (catch Throwable t t)))))
+  [inotify f]
+  (let [p (DerivedNotifier. inotify f (atom nil))]
+    (register inotify p)
     p))
 
 (defmacro when-ready
