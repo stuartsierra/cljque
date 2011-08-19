@@ -31,7 +31,7 @@
       INotify
       (register [this f]
         (when-not (dosync
-                   (when (= @v q)
+                   (when @q
                      (alter q conj f)))
           (f @v))
         this)
@@ -39,17 +39,16 @@
       (supply [this x]
         (if (ready? x)
           (do (doseq [w (dosync
-                         (when (= @v q)
-                           (let [qq @q]
-                             (ref-set v x)
-                             (ref-set q nil)
-                             qq)))]
+                         (when-let [qq @q]
+                           (ref-set v x)
+                           (ref-set q nil)
+                           qq))]
                 (w x))
               x)
           (register x (fn [y] (supply this y)))))
       clojure.lang.IPending
       (isRealized [_]
-        (not= @v q)))))
+        (boolean @q)))))
 
 (deftype DerivedNotifier [source f v]
   INotify
@@ -84,85 +83,59 @@
                               ~@body)))
     `(do ~@body)))
 
-(deftype FutureSeq [n]
-  INotify
-  (register [this f] (register n (fn [_] (f (seq this)))))
-  clojure.lang.IPending
-  (isRealized [this] (realized? n))
-  clojure.lang.Seqable
-  (seq [this] (seq @n))
-  clojure.lang.ISeq
-  (first [this] (first @n))
-  ;; Ensure rest is always wrapped in a FutureCons?
-  (more [this] (rest @n))
-  (next [this] (seq (rest @n)))
-  (count [this] (count @n))
-  (cons [this x] (clojure.lang.Cons. x this))
-  (empty [this] (FutureSeq. (notifier)))
-  (equiv [this that] (if (realized? n)
-                       (= that @n)
-                       (identical? this that))))
+(deftype FutureCons [first rest])
 
-(defn future-seq
-  "Returns a lazy seq which implements INotify. With an argument,
-  returns a lazy seq backed by the given notifier. Calls to any
-  sequence functions will block until the seq is realized.
-  See also supply-next, supply-stop, and pump."
-  ([] (future-seq (notifier)))
-  ;; Check for Notifier or realized Seq?
-  ([n] (FutureSeq. n)))
+(defn future-cons [first rest]
+  (FutureCons. first rest))
 
-(defmethod clojure.core/print-method FutureSeq [x writer]
-  (.write writer (str "#<FutureSeq "
-                      (if (realized? x) (first x) :pending) ">")))
+(defn future-first [fcons]
+  (when fcons (.first fcons)))
+
+(defn future-rest [fcons]
+  (when fcons (.rest fcons)))
 
 (defn future-map [f fseq]
-  (future-seq
-   (when-ready [s fseq]
-     (when-let [c (seq s)]
-       (lazy-seq
-        (cons (f (first c))
-              (future-map f (rest c))))))))
+  (when-ready [c fseq]
+    (when c
+      (future-cons (f (future-first c))
+                   (future-map f (future-rest c))))))
 
 (defn future-filter [f fseq]
-  (future-seq
-   (when-ready [s fseq]
-     (when-let [c (seq s)]
-       (if (f (first c))
-         (lazy-seq
-          (cons (first c)
-                (future-filter f (rest c))))
-         (future-filter f (rest c)))))))
+  (when-ready [c fseq]
+    (when c
+      (if (f (future-first c))
+        (future-cons (future-first c)
+                     (future-filter f (future-rest c)))
+        (future-filter f (future-rest c))))))
 
 (defn future-take [n fseq]
-  (future-seq
-   (when-ready [s fseq]
-     (when-let [c (seq s)]
-       (when (pos? n)
-         (lazy-seq
-          (cons (first c) (future-take (dec n) (rest c)))))))))
+  (when-ready [c fseq]
+    (when c
+      (when (pos? n)
+        (future-cons (future-first c)
+                     (future-take (dec n) (future-rest c)))))))
 
 (defn future-reduce
   ([f fseq]
-     (when-ready [s fseq]
-       (when-let [c (seq s)]
-         (future-reduce f (first c) (rest c)))))
+     (when-ready [c fseq]
+       (when c
+         (future-reduce f (future-first c) (future-rest c)))))
   ([f val fseq]
-     (when-ready [s fseq]
-       (if-let [c (seq s)]
-         (future-reduce f (f val (first c)) (rest c))
+     (when-ready [c fseq]
+       (if c
+         (future-reduce f (f val (future-first c)) (future-rest c))
          val))))
 
 (defn supply-next
   "Extends a future-seq by supplying one Cons cell containing x and
   another future-seq. Returns the next future-seq."
   [fseq x]
-  (rest (supply (.n fseq) (cons x (future-seq)))))
+  (future-rest (supply fseq (future-cons x (notifier)))))
 
 (defn supply-stop
   "Ends a future-seq by supplying nil. Returns nil."
   [fseq]
-  (rest (supply (.n fseq) nil)))
+  (future-rest (supply fseq nil)))
 
 (defn pump
   "Given an unrealized future-seq, returns a mutable reference p which
@@ -174,7 +147,7 @@
   (.close p) will terminate the future-seq.
 
   The currently pending future-seq is always available as @p."
-  ([] (pump (future-seq)))
+  ([] (pump (notifier)))
   ([fseq]
      (let [a (atom fseq)]
        (reify
@@ -206,9 +179,9 @@
         open? (atom true)]
     (register fseq
               (fn thisfn [s]
-                (when @open?
-                 (try (f (first s))
-                      (register (rest s) thisfn)
+                (when (and s @open?)
+                 (try (f (future-first s))
+                      (register (future-rest s) thisfn)
                       (catch Throwable t
                         (error-handler s t))))))
     (reify java.io.Closeable
@@ -216,7 +189,7 @@
 
 (defn testme []
 ;; Sample usage
-  (def a (future-seq))
+  (def a (notifier))
   (def b (future-map #(* 5 %) a))
   (def c (future-filter even? b))
   (def d (future-take 10 c))
@@ -225,15 +198,15 @@
   (def p (pump a))
   (dotimes [i 100] (supply p i))
   (.close p)
-
+(comment
   (assert (= (seq a) (range 100)))
   (assert (= (seq b) (map #(* 5 %) (range 100))))
   (assert (= (seq c) (filter even? b)))
   (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
-  (assert (= 450 @e)))
+  (assert (= 450 @e))))
 
 (defn testerr []
-  (def a (future-seq))
+  (def a (notifier))
   (sink (comp prn inc) a)
   (def p (pump a))
   (dotimes [i 5] (supply p i))
@@ -241,7 +214,7 @@
   (.close p))
 
 (defn testerr2 []
-  (def a (future-seq))
+  (def a (notifier))
   (def b (future-map inc a))
   (def c (future-filter odd? b))
   (def p (pump a))
@@ -252,7 +225,7 @@
   (prn (take 2 c)))
 
 ;; Still TODO:
-;; - supply chunked seqs to future-seqs
+;; - supply chunked seqs to notifiers
 ;; - extend INotify to futures
 
 ;; Other possibilities:
