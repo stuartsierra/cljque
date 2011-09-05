@@ -36,9 +36,6 @@
   "Returns a notifier object that can be read with register and set,
   once only, with supply.
 
-  Calling supply on a notifier A with another notifier B as the value
-  will register A to receive the value supplied to B.
-
   See also - realized? and register."
   []
   (let [q (ref [])
@@ -55,8 +52,8 @@
 
 (defn apply-when-notified
   "Returns a notifier which will receive the result of 
-  (apply f inotify args) when inotify notifies. Any exception thrown
-  by f will be caught and supplyed to the notifier."
+  calling f on the value of inotify. Any exception thrown
+  by f will be caught and supplied to the notifier."
   [inotify f]
   (let [p (DerivedNotifier. inotify f (atom nil))]
     (register inotify p)
