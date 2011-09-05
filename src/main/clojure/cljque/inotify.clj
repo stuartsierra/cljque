@@ -90,6 +90,11 @@
       (follow (f (current c))
               (map& f (later c))))))
 
+(defn take& [n fseq]
+  (when-ready [x fseq]
+    (when (and (pos? n) x)
+      (follow (current x) (take& (dec n) (later x))))))
+
 (defn filter& [f fseq]
   (let [out (notifier)
         step (fn thisfn [x]
@@ -101,11 +106,6 @@
                  (supply out nil)))]
     (register fseq step)
     out))
-
-(defn take& [n fseq]
-  (when-ready [x fseq]
-    (when (and (pos? n) x)
-      (follow (current x) (take& (dec n) (later x))))))
 
 (defn reduce& [f init fseq]
   (let [out (notifier)
