@@ -85,30 +85,30 @@
 (defn follow [a b]
   (FutureCons. a b))
 
-(defn map' [f fseq]
+(defn map& [f fseq]
   (when-ready [c fseq]
     (when c
       (follow (f (current c))
-              (map' f (later c))))))
+              (map& f (later c))))))
 
-(defn filter' [f fseq]
+(defn filter& [f fseq]
   (let [out (notifier)
         step (fn thisfn [x]
                (if x
                  (let [c (current x)]
                    (if (f c)
-                     (supply out (follow c (filter' f (later x))))
+                     (supply out (follow c (filter& f (later x))))
                      (register (later x) thisfn)))
                  (supply out nil)))]
     (register fseq step)
     out))
 
-(defn take' [n fseq]
+(defn take& [n fseq]
   (when-ready [x fseq]
     (when (and (pos? n) x)
-      (follow (current x) (take' (dec n) (later x))))))
+      (follow (current x) (take& (dec n) (later x))))))
 
-(defn reduce' [f init fseq]
+(defn reduce& [f init fseq]
   (let [out (notifier)
         step (fn thisfn [init x]
                (if x
