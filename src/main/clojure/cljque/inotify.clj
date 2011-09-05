@@ -11,11 +11,6 @@
   (supply [recipient x]
     "Submit a value x to recipient."))
 
-(defn ready? [x]
-  (if (satisfies? INotify x)
-    (realized? x)
-    true))
-
 (defn notifier
   "Returns a notifier object that can be read with register and set,
   once only, with supply.
@@ -37,15 +32,13 @@
         this)
       ISupply
       (supply [this x]
-        (if (ready? x)
-          (do (doseq [w (dosync
-                         (when-let [qq @q]
-                           (ref-set v x)
-                           (ref-set q nil)
-                           qq))]
-                (w x))
-              x)
-          (register x (fn [y] (supply this y)))))
+        (doseq [w (dosync
+                      (when-let [qq @q]
+                        (ref-set v x)
+                        (ref-set q nil)
+                        qq))]
+             (w x))
+        x)
       clojure.lang.IPending
       (isRealized [_]
         (boolean @q)))))
@@ -83,82 +76,58 @@
                               ~@body)))
     `(do ~@body)))
 
-(deftype FutureCons [first rest])
+(deftype FutureCons [current later])
 
-(defn future-cons [first rest]
-  (FutureCons. first rest))
+(defn current [fc] (when fc (. fc current)))
 
-(defn future-first [fcons]
-  (when fcons (.first fcons)))
+(defn later [fc] (when fc (. fc later)))
 
-(defn future-rest [fcons]
-  (when fcons (.rest fcons)))
+(defn follow [a b]
+  (FutureCons. a b))
 
-(defn future-map [f fseq]
+(defn map' [f fseq]
   (when-ready [c fseq]
     (when c
-      (future-cons (f (future-first c))
-                   (future-map f (future-rest c))))))
+      (follow (f (current c))
+              (map' f (later c))))))
 
-(defn future-filter [f fseq]
-  (when-ready [c fseq]
-    (when c
-      (if (f (future-first c))
-        (future-cons (future-first c)
-                     (future-filter f (future-rest c)))
-        (future-filter f (future-rest c))))))
+(defn filter' [f fseq]
+  (let [out (notifier)
+        step (fn thisfn [x]
+               (if x
+                 (let [c (current x)]
+                   (if (f c)
+                     (supply out (follow c (filter' f (later x))))
+                     (register (later x) thisfn)))
+                 (supply out nil)))]
+    (register fseq step)
+    out))
 
-(defn future-take [n fseq]
-  (when-ready [c fseq]
-    (when c
-      (when (pos? n)
-        (future-cons (future-first c)
-                     (future-take (dec n) (future-rest c)))))))
+(defn take' [n fseq]
+  (when-ready [x fseq]
+    (when (and (pos? n) x)
+      (follow (current x) (take' (dec n) (later x))))))
 
-(defn future-reduce
-  ([f fseq]
-     (when-ready [c fseq]
-       (when c
-         (future-reduce f (future-first c) (future-rest c)))))
-  ([f val fseq]
-     (when-ready [c fseq]
-       (if c
-         (future-reduce f (f val (future-first c)) (future-rest c))
-         val))))
+(defn reduce' [f init fseq]
+  (let [out (notifier)
+        step (fn thisfn [init x]
+               (if x
+                 (register (later x)
+                           (partial thisfn (f init (current x))))
+                 (supply out init)))]
+    (register fseq (partial step init))
+    out))
 
-(defn supply-next
+(defn push
   "Extends a future-seq by supplying one Cons cell containing x and
   another future-seq. Returns the next future-seq."
   [fseq x]
-  (future-rest (supply fseq (future-cons x (notifier)))))
+  (later (supply fseq (follow x (notifier)))))
 
-(defn supply-stop
+(defn stop
   "Ends a future-seq by supplying nil. Returns nil."
   [fseq]
-  (future-rest (supply fseq nil)))
-
-(defn pump
-  "Given an unrealized future-seq, returns a mutable reference p which
-  can inject new values into the future-seq.
-
-  (supply p x) will extend the future-seq by one cons cell containing
-  x and another future-seq.
-
-  (.close p) will terminate the future-seq.
-
-  The currently pending future-seq is always available as @p."
-  ([] (pump (notifier)))
-  ([fseq]
-     (let [a (atom fseq)]
-       (reify
-         clojure.lang.IDeref
-         (deref [this] @a)
-         ISupply
-         (supply [this x]
-           (swap! a supply-next x))
-         java.io.Closeable
-         (close [this]
-           (swap! a supply-stop))))))
+  (later (supply fseq nil)))
 
 (defn default-sink-error-handler [s e]
   (let [err (java.io.PrintWriter. *err*)]
@@ -166,71 +135,31 @@
     (.flush err)))
 
 (defn sink
-  "Calls f for side effects on each successive value of fseq. Returns
-  a Closeable, calling .close stops reacting to new values.
+  "Calls f for side effects on each successive value of fseq.
 
   Optional :error-handler is a function which will be called with the
   current future-seq and the exception. Default error handler prints a
-  stacktrace to *err*."
+  stacktrace to *err*. After an error is thrown, future values of fseq
+  will be ignored."
   [f fseq & options]
   (let [{:keys [error-handler]
          :or {error-handler default-sink-error-handler}}
-        options
-        open? (atom true)]
+        options]
     (register fseq
               (fn thisfn [s]
-                (when (and s @open?)
-                 (try (f (future-first s))
-                      (register (future-rest s) thisfn)
+                (when s
+                 (try (f (current s))
+                      (register (later s) thisfn)
                       (catch Throwable t
                         (error-handler s t))))))
-    (reify java.io.Closeable
-      (close [this] (reset! open? false)))))
-
-(defn testme []
-;; Sample usage
-  (def a (notifier))
-  (def b (future-map #(* 5 %) a))
-  (def c (future-filter even? b))
-  (def d (future-take 10 c))
-  (def e (future-reduce + d))
-
-  (def p (pump a))
-  (dotimes [i 100] (supply p i))
-  (.close p)
-(comment
-  (assert (= (seq a) (range 100)))
-  (assert (= (seq b) (map #(* 5 %) (range 100))))
-  (assert (= (seq c) (filter even? b)))
-  (assert (= (seq d) (list 0 10 20 30 40 50 60 70 80 90)))
-  (assert (= 450 @e))))
-
-(defn testerr []
-  (def a (notifier))
-  (sink (comp prn inc) a)
-  (def p (pump a))
-  (dotimes [i 5] (supply p i))
-  (supply p "hello")
-  (.close p))
-
-(defn testerr2 []
-  (def a (notifier))
-  (def b (future-map inc a))
-  (def c (future-filter odd? b))
-  (def p (pump a))
-  (dotimes [i 5] (supply p i))
-  (supply p "hello")
-  (.close p)
-  (prn (seq a))
-  (prn (take 2 c)))
+    nil))
 
 ;; Still TODO:
-;; - supply chunked seqs to notifiers
-;; - extend INotify to futures
+;; - supply chunked seqs to notifiers?
+;; - extend INotify to futures?
 
 ;; Other possibilities:
 ;; - better names?
-;;   - latched sequences?
 ;; - support register on things which do not implement INotify?
 ;;   - future-seq fns would work on regular seqs
 ;;   - They would invoke callback immediately
