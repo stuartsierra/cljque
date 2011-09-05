@@ -11,6 +11,27 @@
   (supply [recipient x]
     "Submit a value x to recipient."))
 
+(deftype Notifier [q v]
+  INotify
+  (register [this f]
+    (when-not (dosync
+               (when @q
+                 (alter q conj f)))
+      (f @v))
+    this)
+  ISupply
+  (supply [this x]
+    (doseq [w (dosync
+               (when-let [qq @q]
+                 (ref-set v x)
+                 (ref-set q nil)
+                 qq))]
+      (w x))
+    x)
+  clojure.lang.IPending
+  (isRealized [_]
+    (boolean @q)))
+
 (defn notifier
   "Returns a notifier object that can be read with register and set,
   once only, with supply.
@@ -22,26 +43,7 @@
   []
   (let [q (ref [])
         v (ref q)]
-    (reify
-      INotify
-      (register [this f]
-        (when-not (dosync
-                   (when @q
-                     (alter q conj f)))
-          (f @v))
-        this)
-      ISupply
-      (supply [this x]
-        (doseq [w (dosync
-                      (when-let [qq @q]
-                        (ref-set v x)
-                        (ref-set q nil)
-                        qq))]
-             (w x))
-        x)
-      clojure.lang.IPending
-      (isRealized [_]
-        (boolean @q)))))
+    (Notifier. q v)))
 
 (deftype DerivedNotifier [source f v]
   INotify
