@@ -48,9 +48,10 @@
 (deftype DerivedNotifier [source f v]
   INotify
   (register [this g]
-    (register source (fn [_] (g @v))))
-  ISupply
-  (supply [this x]
+    (register source (fn [_] (g @v)))
+    this)
+  clojure.lang.IFn
+  (invoke [this x]
     (reset! v (try (f x) (catch Throwable t t)))))
 
 (defn apply-when-notified
