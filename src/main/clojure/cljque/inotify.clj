@@ -8,29 +8,33 @@
     immediately. Returns notifier."))
 
 (defprotocol ISupply
-  (supply [recipient x]
-    "Submit a value x to recipient."))
+  (supply [this x]))
 
-(deftype Notifier [q v]
+(deftype Notifier [v]
+  ;; v is atom containing [supplied? value & callbacks]
   INotify
   (register [this f]
-    (when-not (dosync
-               (when @q
-                 (alter q conj f)))
-      (f @v))
+    (when (first
+           (swap! v (fn [[supplied? & _ :as state]]
+                      (if supplied?
+                        state
+                        (conj state f)))))
+      (f (second @v)))
     this)
   ISupply
   (supply [this x]
-    (doseq [w (dosync
-               (when-let [qq @q]
-                 (ref-set v x)
-                 (ref-set q nil)
-                 qq))]
-      (w x))
+    (when (first (swap! v (fn [[supplied? value & callbacks :as state]]
+                            (if supplied?
+                              [supplied? value] ;; repeated supply, clear callbacks
+                              (assoc state 0 true 1 x)))))
+      (doseq [w (drop 2 @v)]
+        (w x))
+      ;; clear callbacks
+      (swap! v (fn [state] (vec (take 2 state)))))
     x)
   clojure.lang.IPending
   (isRealized [_]
-    (boolean @q)))
+    (first @v)))
 
 (defn notifier
   "Returns a notifier object that can be read with register and set,
@@ -38,16 +42,15 @@
 
   See also - realized? and register."
   []
-  (let [q (ref [])
-        v (ref q)]
-    (Notifier. q v)))
+  (let [v (atom [false nil])]
+    (Notifier. v)))
 
 (deftype DerivedNotifier [source f v]
   INotify
   (register [this g]
     (register source (fn [_] (g @v))))
-  clojure.lang.IFn
-  (invoke [this x]
+  ISupply
+  (supply [this x]
     (reset! v (try (f x) (catch Throwable t t)))))
 
 (defn apply-when-notified
