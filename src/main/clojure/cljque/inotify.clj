@@ -36,6 +36,9 @@
   (isRealized [_]
     (first @v)))
 
+(defmethod print-method Notifier [x writer]
+  (.write writer (str "#<Notifier " @(. x v) ">")))
+
 (defn notifier
   "Returns a notifier object that can be read with register and set,
   once only, with supply.
@@ -45,21 +48,27 @@
   (let [v (atom [false nil])]
     (Notifier. v)))
 
-(deftype DerivedNotifier [source f v]
+(deftype DerivedNotifier [source f ^:volatile-mutable v]
   INotify
   (register [this g]
-    (register source (fn [_] (g @v)))
+    (register source (fn [_] (g (. this v))))
     this)
   clojure.lang.IFn
   (invoke [this x]
-    (reset! v (try (f x) (catch Throwable t t)))))
+    (set! v (try (f x) (catch Throwable t t))))
+  java.lang.Object
+  (toString [this]
+    (str "#<DerivedNotifier " (pr-str (. this v)) ">")))
+
+(defmethod print-method DerivedNotifier [x writer]
+  (.write writer (.toString x)))
 
 (defn apply-when-notified
   "Returns a notifier which will receive the result of 
   calling f on the value of inotify. Any exception thrown
   by f will be caught and supplied to the notifier."
   [inotify f]
-  (let [p (DerivedNotifier. inotify f (atom nil))]
+  (let [p (DerivedNotifier. inotify f nil)]
     (register inotify p)
     p))
 
