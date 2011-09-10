@@ -66,11 +66,13 @@
 (deftype DerivedNotifier [source f ^:volatile-mutable v]
   INotify
   (register [this g]
-    (register source (fn [_] (g (. this v))))
+    (register source (fn [x] (g (this x))))
     this)
   clojure.lang.IFn
   (invoke [this x]
-    (set! v (try (f x) (catch Throwable t t))))
+    (if (= f v)
+      (set! v (try (f x) (catch Throwable t t)))
+      v))
   java.lang.Object
   (toString [this]
     (str "#<DerivedNotifier " (pr-str (. this v)) ">")))
@@ -83,9 +85,7 @@
   calling f on the value of inotify. Any exception thrown
   by f will be caught and supplied to the notifier."
   [inotify f]
-  (let [p (DerivedNotifier. inotify f nil)]
-    (register inotify p)
-    p))
+  (DerivedNotifier. inotify f f))
 
 (defmacro when-ready
   "Takes a vector of bindings and a body. Each binding is a pair
