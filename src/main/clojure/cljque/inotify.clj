@@ -179,6 +179,10 @@
                         (error-handler s t))))))
     nil))
 
+(defmacro doseq& [bindings & body]
+  {:pre [(vector? bindings) (= 2 (count bindings))]}
+  `(sink (fn [~(first bindings)] ~@body) ~(second bindings)))
+
 ;; Still TODO:
 ;; - supply chunked seqs to notifiers?
 ;; - extend INotify to futures?
