@@ -63,7 +63,7 @@
 ;; Could invoke f preemptively and set! v, which means f can't have
 ;; side-effects.
 
-(deftype DerivedNotifier [source f ^:volatile-mutable v]
+(deftype DerivedNotifier [source f ^:unsynchronized-mutable v]
   INotify
   (register [this g]
     (register source (fn [x] (g (this x))))
