@@ -48,21 +48,6 @@
   (let [v (atom [false nil])]
     (Notifier. v)))
 
-;; race condition:
-;; - supply to the source
-;; - source starts executing callbacks
-;; - register on derived
-;; - which calls register on source
-;; - sees that source has been supplied
-;; - invoke callback immediately
-;; - this.v has not been set yet
-;;
-;; need to ensure callbacks are always strictly ordered, even while
-;; they're running
-;;
-;; Could invoke f preemptively and set! v, which means f can't have
-;; side-effects.
-
 (deftype DerivedNotifier [source f ^:unsynchronized-mutable v]
   INotify
   (register [this g]
