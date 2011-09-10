@@ -48,6 +48,19 @@
   (let [v (atom [false nil])]
     (Notifier. v)))
 
+(defn wait-for
+  "Block until notifier has a value, return that value. With 4
+  arguments, will return timeout-val if timeout (in milliseconds) is
+  reached before a value is available."
+  ([inotify]
+     (let [p (promise)]
+       (register inotify p)
+       (deref p)))
+  ([inotify timeout-ms timeout-val]
+     (let [p (promise)]
+       (register inotify p)
+       (deref p timeout-ms timeout-val))))
+
 (deftype DerivedNotifier [source f ^:unsynchronized-mutable v]
   INotify
   (register [this g]
