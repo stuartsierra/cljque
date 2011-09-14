@@ -2,13 +2,16 @@
 
 (defprotocol INotify
   (register [notifier f]
-    "Register callback f on notifier. When notifier has a value, it
-    will execute (f value), which should not throw exceptions. If
-    notifier already has a value, executes (f value)
-    immediately. Returns notifier."))
+    "Register callback f on notifier. When notifier receives a value,
+    it will execute (f value), possibly on another thread. Function f
+    should neither block nor throw exceptions. If notifier already has
+    a value, it may execute (f value) immediately. Returns
+    notifier."))
 
 (defprotocol ISupply
-  (supply [this x]))
+  (supply [this x]
+    "Supply a value x to this notifier and invoke pending
+    callbacks. Only works once; future invocations have no effect."))
 
 (deftype Notifier [v]
   ;; v is atom containing [supplied? value & callbacks]
@@ -49,7 +52,7 @@
     (Notifier. v)))
 
 (defn wait-for
-  "Block until notifier has a value, return that value. With 4
+  "Block until notifier has a value, return that value. With 3
   arguments, will return timeout-val if timeout (in milliseconds) is
   reached before a value is available."
   ([inotify]
