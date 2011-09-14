@@ -71,9 +71,12 @@
     (if (= f v)
       (set! v (try (f x) (catch Throwable t t)))
       v))
+  clojure.lang.IPending
+  (isRealized [this]
+    (= f v))
   java.lang.Object
   (toString [this]
-    (str "#<DerivedNotifier " (pr-str (. this v)) ">")))
+    (str "#<DerivedNotifier " (if (= f v) :pending (pr-str v)) ">")))
 
 (defmethod print-method DerivedNotifier [x writer]
   (.write writer (.toString x)))
