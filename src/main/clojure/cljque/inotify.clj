@@ -27,13 +27,12 @@
   ISupply
   (supply [this x]
     (when (first (swap! v (fn [[supplied? value & callbacks :as state]]
-                            (if supplied?
-                              [supplied? value] ;; repeated supply, clear callbacks
+                            (if supplied? state  ; repeated supply, no-op
                               (assoc state 0 true 1 x)))))
       (doseq [w (drop 2 @v)]
         (w x))
       ;; clear callbacks
-      (swap! v (fn [state] (vec (take 2 state)))))
+      (swap! v (fn [[supplied? value & _]] [supplied? value])))
     x)
   clojure.lang.IPending
   (isRealized [_]
