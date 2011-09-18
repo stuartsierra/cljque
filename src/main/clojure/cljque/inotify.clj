@@ -83,7 +83,7 @@
 (defmethod print-method DerivedNotifier [x writer]
   (.write writer (.toString x)))
 
-(defn apply-when-notified
+(defn derived-notifier
   "Returns a notifier which will receive the result of 
   calling f on the value of inotify. Any exception thrown
   by f will be caught and supplied to the notifier."
@@ -100,10 +100,10 @@
   [bindings & body]
   {:pre [(even? (count bindings))]}
   (if (seq bindings)
-    `(apply-when-notified ~(second bindings)
-                          (fn [~(first bindings)]
-                            (when-ready ~(drop 2 bindings)
-                              ~@body)))
+    `(derived-notifier ~(second bindings)
+                       (fn [~(first bindings)]
+                         (when-ready ~(drop 2 bindings)
+                           ~@body)))
     `(do ~@body)))
 
 (deftype FutureCons [current later])
