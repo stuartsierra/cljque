@@ -28,7 +28,7 @@
   (supply [this x]
     (when (first (swap! v (fn [[supplied? value & callbacks :as state]]
                             (if supplied? state  ; repeated supply, no-op
-                              (assoc state 0 true 1 x)))))
+                                (assoc state 0 true 1 x)))))
       (doseq [w (drop 2 @v)]
         (w x))
       ;; clear callbacks
@@ -178,10 +178,10 @@
     (register fseq
               (fn thisfn [s]
                 (when s
-                 (try (f (current s))
-                      (register (later s) thisfn)
-                      (catch Throwable t
-                        (error-handler s t))))))
+                  (try (f (current s))
+                       (register (later s) thisfn)
+                       (catch Throwable t
+                         (error-handler s t))))))
     nil))
 
 (defmacro doseq& [bindings & body]
