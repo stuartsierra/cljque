@@ -59,10 +59,10 @@
   (.write writer (str "#<Notifier " @(. x v) ">")))
 
 (defn notifier
-  "Returns a notifier object that can be read with register and set,
-  once only, with supply.
-
-  See also - realized? and register."
+  "Returns a notifier object that can be set, once only, with
+  supply. When supplied, invokes callback functions added with
+  register. Calling deref will block until a value is supplied, unless
+  the 3-argument form of deref is used. See also - realized?"
   []
   (let [v (atom [false nil])]
     (Notifier. v)))
