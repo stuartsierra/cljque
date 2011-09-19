@@ -13,6 +13,19 @@
     "Supply a value x to this notifier and invoke pending
     callbacks. Only works once; future invocations have no effect."))
 
+(defn register-wait
+  "Block until notifier has a value, return that value. With 3
+  arguments, will return timeout-val if timeout (in milliseconds) is
+  reached before a value is available."
+  ([inotify]
+     (let [p (promise)]
+       (register inotify p)
+       (deref p)))
+  ([inotify timeout-ms timeout-val]
+     (let [p (promise)]
+       (register inotify p)
+       (deref p timeout-ms timeout-val))))
+
 (deftype Notifier [v]
   ;; v is atom containing [supplied? value & callbacks]
   INotify
@@ -36,7 +49,11 @@
     x)
   clojure.lang.IPending
   (isRealized [_]
-    (first @v)))
+    (first @v))
+  clojure.lang.IDeref
+  (deref [this] (register-wait this))
+  clojure.lang.IBlockingDeref
+  (deref [this timeout val] (register-wait this timeout val)))
 
 (defmethod print-method Notifier [x writer]
   (.write writer (str "#<Notifier " @(. x v) ">")))
@@ -49,19 +66,6 @@
   []
   (let [v (atom [false nil])]
     (Notifier. v)))
-
-(defn wait-for
-  "Block until notifier has a value, return that value. With 3
-  arguments, will return timeout-val if timeout (in milliseconds) is
-  reached before a value is available."
-  ([inotify]
-     (let [p (promise)]
-       (register inotify p)
-       (deref p)))
-  ([inotify timeout-ms timeout-val]
-     (let [p (promise)]
-       (register inotify p)
-       (deref p timeout-ms timeout-val))))
 
 (deftype DerivedNotifier [source f ^:unsynchronized-mutable v]
   INotify
@@ -76,6 +80,10 @@
   clojure.lang.IPending
   (isRealized [this]
     (= f v))
+  clojure.lang.IDeref
+  (deref [this] (register-wait this))
+  clojure.lang.IBlockingDeref
+  (deref [this timeout val] (register-wait this timeout val))
   java.lang.Object
   (toString [this]
     (str "#<DerivedNotifier " (if (= f v) :pending (pr-str v)) ">")))
