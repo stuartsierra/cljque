@@ -238,6 +238,23 @@
   {:pre [(vector? bindings) (= 2 (count bindings))]}
   `(sink (fn [~(first bindings)] ~@body) ~(second bindings)))
 
+(defn first-in
+  "Returns a notifier which receives the value of the first given
+  notifier to have a value."
+ [& notifiers]
+  (let [out (notifier)]
+    (doseq [n notifiers]
+      (register n #(supply out %)))
+    out))
+
+(defn future-call& [f]
+  (let [out (notifier)]
+    (future-call #(supply out (try (f) (catch Throwable t t))))
+    out))
+
+(defmacro future& [& body]
+  `(future-call& (fn [] ~@body)))
+
 ;; Still TODO:
 ;; - supply chunked seqs to notifiers?
 ;; - extend INotify to futures?
