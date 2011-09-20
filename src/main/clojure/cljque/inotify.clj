@@ -134,12 +134,13 @@
   body more than once."
   [bindings & body]
   {:pre [(even? (count bindings))]}
-  (if (seq bindings)
-    `(register ~(second bindings)
-               (fn [~(first bindings)]
-                 (do-when-ready ~(drop 2 bindings)
-                   ~@body)))
-    `(do ~@body)))
+  (list 'do (if (seq bindings)
+              `(register ~(second bindings)
+                         (fn [~(first bindings)]
+                           (do-when-ready ~(drop 2 bindings)
+                                          ~@body)))
+              `(do ~@body))
+        nil))
 
 (defprotocol IFutureSeq
   (current [this])
