@@ -13,7 +13,7 @@
     "Supply a value x to this notifier and invoke pending
     callbacks. Only works once; future invocations have no effect."))
 
-(defn register-wait
+(defn promise-wait
   "Block until notifier has a value, return that value. With 3
   arguments, will return timeout-val if timeout (in milliseconds) is
   reached before a value is available."
@@ -51,9 +51,17 @@
   (isRealized [_]
     (first @v))
   clojure.lang.IDeref
-  (deref [this] (register-wait this))
+  (deref [this]
+    (let [vv @v]
+      (if (first vv)
+        (second vv)
+        (promise-wait this))))
   clojure.lang.IBlockingDeref
-  (deref [this timeout val] (register-wait this timeout val)))
+  (deref [this timeout val]
+    (let [vv @v]
+      (if (first vv)
+        (second vv)
+        (promise-wait this timeout val)))))
 
 (defmethod print-method Notifier [x writer]
   (.write writer (str "#<Notifier " @(. x v) ">")))
@@ -81,9 +89,15 @@
   (isRealized [this]
     (= f v))
   clojure.lang.IDeref
-  (deref [this] (register-wait this))
+  (deref [this]
+    (if (= f v)
+      (promise-wait this)
+      v))
   clojure.lang.IBlockingDeref
-  (deref [this timeout val] (register-wait this timeout val))
+  (deref [this timeout val]
+    (if (= f v)
+      (promise-wait this timeout val)
+      v))
   java.lang.Object
   (toString [this]
     (str "#<DerivedNotifier " (if (= f v) :pending (pr-str v)) ">")))
