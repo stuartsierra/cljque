@@ -130,6 +130,17 @@
     `(do ~@body)))
 
 (deftype FutureCons [current later])
+(defmacro do-when-ready
+  "Like when-ready, but does not return a value and will not execute
+  body more than once."
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (if (seq bindings)
+    `(register ~(second bindings)
+               (fn [~(first bindings)]
+                 (do-when-ready ~(drop 2 bindings)
+                   ~@body)))
+    `(do ~@body)))
 
 (defn current [fc] (when fc (. fc current)))
 
