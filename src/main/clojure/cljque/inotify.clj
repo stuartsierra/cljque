@@ -106,9 +106,10 @@
   (.write writer (.toString x)))
 
 (defn derived-notifier
-  "Returns a notifier which will receive the result of 
-  calling f on the value of inotify. Any exception thrown
-  by f will be caught and supplied to the notifier."
+  "Returns a notifier which will receive the result of calling f on
+  the value of inotify. Any exception thrown by f will be caught and
+  supplied to the notifier. The function f may be called multiple
+  times."
   [inotify f]
   (DerivedNotifier. inotify f f))
 
@@ -117,8 +118,8 @@
   consisting of a symbol and a notifier. When the notifier notifies,
   it will be bound to the symbol and body will be executed. The return
   value of body will be supplied to a notifier which is returned from
-  when-ready. Any exception thrown in body will be caught and
-  supplied to the notifier."
+  when-ready. Any exception thrown in body will be caught and supplied
+  to the notifier. The body may be executed multiple times."
   [bindings & body]
   {:pre [(even? (count bindings))]}
   (if (seq bindings)
