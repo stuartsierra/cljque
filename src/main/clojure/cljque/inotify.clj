@@ -129,7 +129,6 @@
                            ~@body)))
     `(do ~@body)))
 
-(deftype FutureCons [current later])
 (defmacro do-when-ready
   "Like when-ready, but does not return a value and will not execute
   body more than once."
@@ -142,9 +141,14 @@
                    ~@body)))
     `(do ~@body)))
 
-(defn current [fc] (when fc (. fc current)))
+(defprotocol IFutureSeq
+  (current [this])
+  (later [this]))
 
-(defn later [fc] (when fc (. fc later)))
+(deftype FutureCons [current later]
+  IFutureSeq
+  (current [this] current)
+  (later [this] later))
 
 (defn follow [a b]
   (FutureCons. a b))
