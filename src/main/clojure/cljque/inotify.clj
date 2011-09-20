@@ -164,6 +164,17 @@
     (when (and (pos? n) x)
       (follow (current x) (take& (dec n) (later x))))))
 
+(defn drop& [n fseq]
+  (let [out (notifier)
+        step (fn thisfn [n x]
+               (if x
+                 (if (zero? n)
+                   (supply out x)
+                   (register (later x) (partial thisfn (dec n))))
+                 (supply out nil)))]
+    (register fseq (partial step (dec n)))
+    out))
+
 (defn filter& [f fseq]
   (let [out (notifier)
         step (fn thisfn [x]
