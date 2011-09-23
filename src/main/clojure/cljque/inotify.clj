@@ -302,6 +302,9 @@
   "Elapsed time: 0.217 msecs"
   "Elapsed time: 0.215 msecs"
 )
+
+;; "attend": occur with or as a result of; wait on (an important person)
+
 ;; Still TODO:
 ;; - supply chunked seqs to notifiers?
 ;; - extend INotify to futures?
