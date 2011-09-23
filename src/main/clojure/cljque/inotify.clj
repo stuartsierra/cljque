@@ -266,6 +266,42 @@
 (defmacro future& [& body]
   `(future-call& (fn [] ~@body)))
 
+(comment
+  ;; Performance comparison of derived-notifier vs lazy-notifier
+  (dotimes [i 10]
+    (let [origin (notifier)
+          terminus (loop [i 0, n origin]
+                     (if (= i 8000) n  ; StackOverflow at 10000
+                         (recur (inc i) (derived-notifier n inc))))]
+      (time (do (supply origin 1) (deref terminus)))))
+  "Elapsed time: 11.295 msecs"
+  "Elapsed time: 7.868 msecs"
+  "Elapsed time: 16.707 msecs"
+  "Elapsed time: 8.477 msecs"
+  "Elapsed time: 14.757 msecs"
+  "Elapsed time: 7.094 msecs"
+  "Elapsed time: 16.908 msecs"
+  "Elapsed time: 8.074 msecs"
+  "Elapsed time: 7.767 msecs"
+  "Elapsed time: 20.334 msecs"
+
+  (dotimes [i 10]
+    (let [origin (notifier)
+          terminus (loop [i 0, n origin]
+                     (if (= i 8000) n
+                         (recur (inc i) (lazy-notifier n inc))))]
+      (time (do (supply origin 1) (deref terminus)))))
+  "Elapsed time: 0.409 msecs"
+  "Elapsed time: 0.254 msecs"
+  "Elapsed time: 0.229 msecs"
+  "Elapsed time: 0.213 msecs"
+  "Elapsed time: 0.222 msecs"
+  "Elapsed time: 0.225 msecs"
+  "Elapsed time: 0.244 msecs"
+  "Elapsed time: 0.222 msecs"
+  "Elapsed time: 0.217 msecs"
+  "Elapsed time: 0.215 msecs"
+)
 ;; Still TODO:
 ;; - supply chunked seqs to notifiers?
 ;; - extend INotify to futures?
