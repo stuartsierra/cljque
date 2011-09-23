@@ -75,7 +75,7 @@
   (let [v (atom [false nil])]
     (Notifier. v)))
 
-(deftype DerivedNotifier [source f ^:unsynchronized-mutable v]
+(deftype LazyNotifier [source f ^:unsynchronized-mutable v]
   INotify
   (register [this g]
     (register source (fn [x] (g (this x))))
@@ -100,18 +100,29 @@
       v))
   java.lang.Object
   (toString [this]
-    (str "#<DerivedNotifier " (if (= f v) :pending (pr-str v)) ">")))
+    (str "#<LazyNotifier " (if (= f v) :pending (pr-str v)) ">")))
 
-(defmethod print-method DerivedNotifier [x writer]
+(defmethod print-method LazyNotifier [x writer]
   (.write writer (.toString x)))
+
+(defn lazy-notifier
+  "Returns a notifier which will receive the result of calling f on
+  the value of inotify. Any exception thrown by f will be caught and
+  supplied to the notifier. The function f will not be called unless a
+  callback is registered, and f may be called multiple times."
+  [inotify f]
+  (LazyNotifier. inotify f f))
 
 (defn derived-notifier
   "Returns a notifier which will receive the result of calling f on
   the value of inotify. Any exception thrown by f will be caught and
-  supplied to the notifier. The function f may be called multiple
-  times."
+  supplied to the notifier. The function f will be called as soon as
+  inotify has a value, and f will only be called once."
   [inotify f]
-  (DerivedNotifier. inotify f f))
+  (let [n (notifier)]
+    (register inotify
+              (fn [x] (supply n (try (f x) (catch Throwable t t)))))
+    n))
 
 (defmacro when-ready
   "Takes a vector of bindings and a body. Each binding is a pair
