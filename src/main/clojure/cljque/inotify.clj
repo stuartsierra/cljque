@@ -141,6 +141,7 @@
     `(do ~@body)))
 
 (defmacro when-ready
+  "Like attend but will not execute body more than once."
   [bindings & body]
   {:pre [(even? (count bindings))]}
   (if (seq bindings)
