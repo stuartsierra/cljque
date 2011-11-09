@@ -290,9 +290,14 @@
   (def d (take& 10 c))
   (def e (reduce& + 0 d))
   (doseq& [x d] (println "d is" x))
-  (do-when-ready [x e] (println "e is" x))
+  (do-attend [x e] (println "e is" x))
   
-  (loop [i 0, fseq a] (if (= i 100) (stop fseq) (recur (inc i) (push fseq i))))
+  (def tick (atom a))
+  ;; This demonstrates a concurrency bug:
+  (dotimes [i 100]
+    (future (Thread/sleep (* 100 (rand-int 10)))
+            (swap! tick push i)))
+  (swap! tick stop)
   )
 
 (comment
@@ -335,24 +340,20 @@
 ;; "attend": occur with or as a result of; wait on (an important person)
 
 ;; Still TODO:
-;; - supply chunked seqs to notifiers?
-;; - extend INotify to futures?
+;; - Supply chunked seqs to notifiers
 
-;; Other possibilities:
-;; - better names?
-;; - support register on things which do not implement INotify?
+;; Open questions:
+;; - Should FutureCons implement ISeq?
+;;   - implies all of IPersistentCollection and Seqable (and maybe Sequential)
+;; - Should INotify be extended to other types?
 ;;   - future-seq fns would work on regular seqs
 ;;   - They would invoke callback immediately
-;; - cancellable registrations?
+;; - Should registration be cancellable?
+;;   - Complicates bookkeeping
 ;; - Use WeakReferences for callback queue?
 ;;   - if result is not used, notification can be skipped
-
-
-;; This is a fully "unmaterialized" abstraction. It separates 
-;; consumption from realization.
-
-;; Special version of "sink" that takes 2 args: an agent and a
-;; function to apply?
+;; - Should there be any integration with Agents?
+;;   - e.g. 'sink' that takes agent & function?
 
 
 ;; Local Variables:
