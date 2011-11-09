@@ -124,16 +124,25 @@
               (fn [x] (supply n (try (f x) (catch Throwable t t)))))
     n))
 
-(defmacro when-ready
+(defmacro attend
   "Takes a vector of bindings and a body. Each binding is a pair
   consisting of a symbol and a notifier. When the notifier notifies,
   it will be bound to the symbol and body will be executed. The return
   value of body will be supplied to a notifier which is returned from
-  when-ready. Any exception thrown in body will be caught and supplied
+  attend. Any exception thrown in body will be caught and supplied
   to the notifier. The body may be executed multiple times."
   [bindings & body]
-  {:pre [(pos? (count bindings))
-         (even? (count bindings))]}
+  {:pre [(even? (count bindings))]}
+  (if (seq bindings)
+    `(lazy-notifier ~(second bindings)
+                    (fn [~(first bindings)]
+                      (attend ~(drop 2 bindings)
+                        ~@body)))
+    `(do ~@body)))
+
+(defmacro when-ready
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
   (if (seq bindings)
     `(derived-notifier ~(second bindings)
                        (fn [~(first bindings)]
@@ -167,13 +176,13 @@
   (FutureCons. a b))
 
 (defn map& [f fseq]
-  (when-ready [c fseq]
+  (attend [c fseq]
     (when c
       (follow (f (current c))
               (map& f (later c))))))
 
 (defn take& [n fseq]
-  (when-ready [x fseq]
+  (attend [x fseq]
     (when (and (pos? n) x)
       (follow (current x) (take& (dec n) (later x))))))
 
@@ -329,5 +338,5 @@
 
 ;; Local Variables:
 ;; mode: clojure
-;; eval: (progn (define-clojure-indent (when-ready (quote defun))) (setq inferior-lisp-program "/Users/stuart/src/stuartsierra/cljque/run.sh"))
+;; eval: (progn (define-clojure-indent (attend (quote defun))) (setq inferior-lisp-program "/Users/stuart/src/stuartsierra/cljque/run.sh"))
 ;; End:
