@@ -277,6 +277,20 @@
 (defmacro future& [& body]
   `(future-call& (fn [] ~@body)))
 
+
+(comment
+  ;; Sample usage
+  (def a (notifier))
+  (def b (filter& even? a))
+  (def c (map& #(* 5 %) b))
+  (def d (take& 10 c))
+  (def e (reduce& + 0 d))
+  (doseq& [x d] (println "d is" x))
+  (do-when-ready [x e] (println "e is" x))
+  
+  (loop [i 0, fseq a] (if (= i 100) fseq (recur (inc i) (push fseq i))))
+  )
+
 (comment
   ;; Performance comparison of derived-notifier vs lazy-notifier
   (dotimes [i 10]
