@@ -288,7 +288,7 @@
   (doseq& [x d] (println "d is" x))
   (do-when-ready [x e] (println "e is" x))
   
-  (loop [i 0, fseq a] (if (= i 100) fseq (recur (inc i) (push fseq i))))
+  (loop [i 0, fseq a] (if (= i 100) (stop fseq) (recur (inc i) (push fseq i))))
   )
 
 (comment
