@@ -173,6 +173,10 @@
   (current [this] current)
   (later [this] later))
 
+(extend nil IFutureSeq
+        {:current (constantly nil)
+         :later (constantly nil)})
+
 (defn follow [a b]
   (FutureCons. a b))
 
