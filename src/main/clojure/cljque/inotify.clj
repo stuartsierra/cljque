@@ -132,7 +132,8 @@
   when-ready. Any exception thrown in body will be caught and supplied
   to the notifier. The body may be executed multiple times."
   [bindings & body]
-  {:pre [(even? (count bindings))]}
+  {:pre [(pos? (count bindings))
+         (even? (count bindings))]}
   (if (seq bindings)
     `(derived-notifier ~(second bindings)
                        (fn [~(first bindings)]
