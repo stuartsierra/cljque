@@ -353,5 +353,5 @@
 
 ;; Local Variables:
 ;; mode: clojure
-;; eval: (progn (define-clojure-indent (attend (quote defun))) (setq inferior-lisp-program "/Users/stuart/src/stuartsierra/cljque/run.sh"))
+;; eval: (progn (define-clojure-indent (attend (quote defun)) (when-ready (quote defun)) (do-when-ready (quote defun))) (setq inferior-lisp-program (concat default-directory "../../../../run.sh")))
 ;; End:
