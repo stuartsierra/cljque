@@ -263,7 +263,7 @@
 (defn first-in
   "Returns a notifier which receives the value of the first given
   notifier to have a value."
- [& notifiers]
+  [& notifiers]
   (let [out (notifier)]
     (doseq [n notifiers]
       (register n #(supply out %)))
