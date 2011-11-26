@@ -230,7 +230,7 @@
   [fseq x]
   (later (supply fseq (follow x (notifier)))))
 
-(defn stop
+(defn stop!
   "Ends a future-seq by supplying nil. Returns nil."
   [fseq]
   (later (supply fseq nil)))
@@ -281,7 +281,6 @@
 (defmacro future& [& body]
   `(future-call& (fn [] ~@body)))
 
-
 (comment
   ;; Sample usage
   (def a (notifier))
@@ -290,14 +289,15 @@
   (def d (take& 10 c))
   (def e (reduce& + 0 d))
   (doseq& [x d] (println "d is" x))
-  (do-attend [x e] (println "e is" x))
+  (do-when-ready [x e] (println "e is" x))
   
-  (def tick (atom a))
-  ;; This demonstrates a concurrency bug:
+  ;; This must be an Agent, not an Atom or Ref:
+  (def tick (agent a))
   (dotimes [i 100]
-    (future (Thread/sleep (* 100 (rand-int 10)))
-            (swap! tick push i)))
-  (swap! tick stop)
+    (send tick push! i)
+    #_(future (Thread/sleep (* 100 (rand-int 10)))
+            (send tick push! i)))
+  (send tick stop!)
   )
 
 (comment
