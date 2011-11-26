@@ -26,42 +26,40 @@
        (register inotify p)
        (deref p timeout-ms timeout-val))))
 
-(deftype Notifier [v]
-  ;; v is atom containing [supplied? value & callbacks]
+(deftype Notifier [^:unsynchronized-mutable v
+                   ^:unsynchronized-mutable q]
   INotify
   (register [this f]
-    (when (first
-           (swap! v (fn [[supplied? & _ :as state]]
-                      (if supplied?
-                        state
-                        (conj state f)))))
-      (f (second @v)))
+    (when-not (locking this
+                (when q
+                  (set! q (conj q f))))
+      (f v))
     this)
   ISupply
   (supply [this x]
-    (when (first (swap! v (fn [[supplied? value & callbacks :as state]]
-                            (if supplied? state  ; repeated supply, no-op
-                                (assoc state 0 true 1 x)))))
-      (doseq [w (drop 2 @v)]
-        (w x))
-      ;; clear callbacks
-      (swap! v (fn [[supplied? value & _]] [supplied? value])))
+    (doseq [w (locking this
+                (when q
+                  (set! v x)
+                  (let [qq q]
+                    (set! q nil)
+                    qq)))]
+      (w x))
     x)
   clojure.lang.IPending
-  (isRealized [_]
-    (first @v))
+  (isRealized [this]
+    (locking this (not q)))
   clojure.lang.IDeref
   (deref [this]
-    (let [vv @v]
-      (if (first vv)
-        (second vv)
-        (promise-wait this))))
+    (locking this
+      (if q
+        (promise-wait this)
+        v)))
   clojure.lang.IBlockingDeref
   (deref [this timeout val]
-    (let [vv @v]
-      (if (first vv)
-        (second vv)
-        (promise-wait this timeout val)))))
+    (locking this
+      (if q
+        (promise-wait this timeout val)
+        v))))
 
 (defmethod print-method Notifier [x writer]
   (.write writer (str "#<Notifier " @(. x v) ">")))
@@ -72,8 +70,7 @@
   register. Calling deref will block until a value is supplied, unless
   the 3-argument form of deref is used. See also - realized?"
   []
-  (let [v (atom [false nil])]
-    (Notifier. v)))
+  (Notifier. nil []))
 
 (deftype LazyNotifier [source f ^:unsynchronized-mutable v]
   INotify
@@ -83,7 +80,7 @@
   clojure.lang.IFn
   (invoke [this x]
     (if (= f v)
-      (set! v (try (f x) (catch Throwable t t)))
+      (set! (.v this) (try (f x) (catch Throwable t t)))
       v))
   clojure.lang.IPending
   (isRealized [this]
