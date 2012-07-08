@@ -26,28 +26,35 @@
        (register inotify p)
        (deref p timeout-ms timeout-val))))
 
+;; Normal `locking` breaks mutable fields; see CLJ-1023
+(defmacro unsafe-locking [lock & body]
+  `(do (monitor-enter ~lock)
+       (let [result# (do ~@body)]
+         (monitor-exit ~lock)
+         result#)))
+
 (deftype Notifier [^:unsynchronized-mutable v
                    ^:unsynchronized-mutable q]
   INotify
   (register [this f]
-    (when-not (locking this
+    (when-not (unsafe-locking this
                 (when q
-                  (set! (.-q this) (conj q f))))
+                  (set! q (conj q f))))
       (f v))
     this)
   ISupply
   (supply [this x]
-    (doseq [w (locking this
+    (doseq [w (unsafe-locking this
                 (when q
-                  (set! (.-v this) x)
+                  (set! v x)
                   (let [qq q]
-                    (set! (.-q this) nil)
+                    (set! q nil)
                     qq)))]
       (w x))
     x)
   clojure.lang.IPending
   (isRealized [this]
-    (locking this (not q)))
+    (unsafe-locking this (not q)))
   clojure.lang.IDeref
   (deref [this]
     (if q
@@ -78,7 +85,7 @@
   clojure.lang.IFn
   (invoke [this x]
     (if (= f v)
-      (set! (.v this) (try (f x) (catch Throwable t t)))
+      (set! v (try (f x) (catch Throwable t t)))
       v))
   clojure.lang.IPending
   (isRealized [this]
@@ -219,7 +226,7 @@
     (register fseq (partial step init))
     out))
 
-(defn push
+(defn push!
   "Extends a future-seq by supplying one Cons cell containing x and
   another future-seq. Returns the next future-seq."
   [fseq x]
@@ -289,9 +296,7 @@
   ;; This must be an Agent, not an Atom or Ref:
   (def tick (agent a))
   (dotimes [i 100]
-    (send tick push! i)
-    #_(future (Thread/sleep (* 100 (rand-int 10)))
-            (send tick push! i)))
+    (send tick push! i))
   (send tick stop!)
   )
 
