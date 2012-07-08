@@ -305,36 +305,36 @@
   (dotimes [i 10]
     (let [origin (notifier)
           terminus (loop [i 0, n origin]
-                     (if (= i 8000) n  ; StackOverflow at 10000
+                     (if (= i 1000) n
                          (recur (inc i) (derived-notifier n inc))))]
       (time (do (supply origin 1) (deref terminus)))))
-  "Elapsed time: 11.295 msecs"
-  "Elapsed time: 7.868 msecs"
-  "Elapsed time: 16.707 msecs"
-  "Elapsed time: 8.477 msecs"
-  "Elapsed time: 14.757 msecs"
-  "Elapsed time: 7.094 msecs"
-  "Elapsed time: 16.908 msecs"
-  "Elapsed time: 8.074 msecs"
-  "Elapsed time: 7.767 msecs"
-  "Elapsed time: 20.334 msecs"
+"Elapsed time: 8.002 msecs"
+"Elapsed time: 1.529 msecs"
+"Elapsed time: 1.558 msecs"
+"Elapsed time: 1.494 msecs"
+"Elapsed time: 1.496 msecs"
+"Elapsed time: 1.522 msecs"
+"Elapsed time: 1.534 msecs"
+"Elapsed time: 1.432 msecs"
+"Elapsed time: 1.652 msecs"
+"Elapsed time: 1.53 msecs"
 
   (dotimes [i 10]
     (let [origin (notifier)
           terminus (loop [i 0, n origin]
-                     (if (= i 8000) n
+                     (if (= i 1000) n
                          (recur (inc i) (lazy-notifier n inc))))]
       (time (do (supply origin 1) (deref terminus)))))
-  "Elapsed time: 0.409 msecs"
-  "Elapsed time: 0.254 msecs"
-  "Elapsed time: 0.229 msecs"
-  "Elapsed time: 0.213 msecs"
-  "Elapsed time: 0.222 msecs"
-  "Elapsed time: 0.225 msecs"
-  "Elapsed time: 0.244 msecs"
-  "Elapsed time: 0.222 msecs"
-  "Elapsed time: 0.217 msecs"
-  "Elapsed time: 0.215 msecs"
+"Elapsed time: 2.095 msecs"
+"Elapsed time: 0.857 msecs"
+"Elapsed time: 0.725 msecs"
+"Elapsed time: 0.851 msecs"
+"Elapsed time: 0.866 msecs"
+"Elapsed time: 0.86 msecs"
+"Elapsed time: 0.887 msecs"
+"Elapsed time: 0.866 msecs"
+"Elapsed time: 0.841 msecs"
+"Elapsed time: 0.513 msecs"
 )
 
 ;; "attend": occur with or as a result of; wait on (an important person)
