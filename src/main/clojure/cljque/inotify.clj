@@ -32,16 +32,16 @@
   (register [this f]
     (when-not (locking this
                 (when q
-                  (set! q (conj q f))))
+                  (set! (.-q this) (conj q f))))
       (f v))
     this)
   ISupply
   (supply [this x]
     (doseq [w (locking this
                 (when q
-                  (set! v x)
+                  (set! (.-v this) x)
                   (let [qq q]
-                    (set! q nil)
+                    (set! (.-q this) nil)
                     qq)))]
       (w x))
     x)
@@ -50,19 +50,17 @@
     (locking this (not q)))
   clojure.lang.IDeref
   (deref [this]
-    (locking this
-      (if q
-        (promise-wait this)
-        v)))
+    (if q
+      (promise-wait this)
+      v))
   clojure.lang.IBlockingDeref
   (deref [this timeout val]
-    (locking this
-      (if q
-        (promise-wait this timeout val)
-        v))))
+    (if q
+      (promise-wait this timeout val)
+      v)))
 
 (defmethod print-method Notifier [x writer]
-  (.write writer (str "#<Notifier " @(. x v) ">")))
+  (.write writer (str "#<Notifier " (if (realized? x) @x :pending) ">")))
 
 (defn notifier
   "Returns a notifier object that can be set, once only, with
