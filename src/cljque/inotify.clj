@@ -2,19 +2,19 @@
 
 (defprotocol INotify
   (attend [notifier f]
-    "Register callback f on notifier. When notifier receives a value,
-    it will execute (f value), possibly on another thread. Function f
-    should neither block nor throw exceptions. If notifier already has
-    a value, it may execute (f value) immediately. Returns
-    notifier."))
+    "Registers callback f on notifier and returns notifier. When notifier
+    receives a value, it will execute (f value), possibly on another
+    thread. If notifier already has a value, it may execute (f value)
+    immediately on the current thread. The function f should neither
+    block nor throw exceptions without catching them."))
 
 (defprotocol ISupply
   (supply [this x]
-    "Supply a value x to this notifier and invoke pending
-    callbacks. Only works once; future invocations have no effect."))
+    "Sets the value of this notifier to x and invokes pending callbacks.
+    Only works once; future invocations have no effect."))
 
 (defn promise-wait
-  "Block until notifier has a value, return that value. With 3
+  "Blocks until notifier has a value and returns that value. With 3
   arguments, will return timeout-val if timeout (in milliseconds) is
   reached before a value is available."
   ([inotify]
@@ -127,19 +127,18 @@
     n))
 
 (defmacro on
-  "bindings is a vector of [symbol notifier]. When the notifier has a
-  value, executes body with that value will be bound to the symbol (or
+  "bindings is a vector of [binding-form notifier]. When the notifier
+  has a value, executes body with that value bound to the symbol (or
   any other destructuring form). Returns a notifier which receives the
-  return value of body. Any exception thrown in body will be caught
-  and supplied to the notifier."
+  return value of body, or any exception thrown in body."
   [bindings & body]
   {:pre [(= 2 (count bindings))]}
   `(derived-notifier ~(second bindings)
                      (fn [~(first bindings)] ~@body)))
 
 (defmacro lazy-on
-  "Like 'on', but body will not be executed until the value is needed,
-  and may be executed multiple times. More efficient than 'on'."
+  "Like 'on' but more efficient. The body will not be executed until
+  its return value is needed, and may be executed multiple times."
   [bindings & body]
   {:pre [(= 2 (count bindings))]}
   `(lazy-notifier ~(second bindings)
@@ -150,4 +149,4 @@
   [bindings & body]
   {:pre [(= 2 (count bindings))]}
   `(attend ~(second bindings)
-             (fn [~(first bindings)] ~@body)))
+           (fn [~(first bindings)] ~@body)))
