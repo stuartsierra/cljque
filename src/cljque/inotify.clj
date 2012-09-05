@@ -148,5 +148,6 @@
   "Like 'on' but does not return a value."
   [bindings & body]
   {:pre [(= 2 (count bindings))]}
-  `(attend ~(second bindings)
-           (fn [~(first bindings)] ~@body)))
+  `(do (attend ~(second bindings)
+            (fn [~(first bindings)] ~@body))
+       nil))
