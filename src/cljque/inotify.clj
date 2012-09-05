@@ -151,3 +151,27 @@
   `(do (attend ~(second bindings)
             (fn [~(first bindings)] ~@body))
        nil))
+
+(defn on-any
+  "Returns a notifier which receives the value of the first of the
+  given notifiers to have a value."
+  [& notifiers]
+  (let [out (notifier)]
+    (doseq [n notifiers]
+      (attend n (fn [value] (supply out value))))
+    out))
+
+(defn- collect-all [out values notifiers]
+  (if (seq notifiers)
+    (attend (first notifiers)
+            (fn [value]
+              (collect-all out (conj values value) (rest notifiers))))
+    (supply out values)))
+
+(defn on-all
+  "Returns a notifier which will receive a vector of the values of the
+  given notifiers after all of them have completed."
+  [& notifiers]
+  (let [out (notifier)]
+    (collect-all out [] notifiers)
+    out))
