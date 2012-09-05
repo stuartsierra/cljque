@@ -126,45 +126,31 @@
               (fn [x] (supply n (try (f x) (catch Throwable t t)))))
     n))
 
-(defmacro attend
-  "Takes a vector of bindings and a body. Each binding is a pair
-  consisting of a symbol and a notifier. When the notifier notifies,
-  it will be bound to the symbol and body will be executed. The return
-  value of body will be supplied to a notifier which is returned from
-  attend. Any exception thrown in body will be caught and supplied
-  to the notifier. The body may be executed multiple times."
+(defmacro on
+  "bindings is a vector of [symbol notifier]. When the notifier has a
+  value, executes body with that value will be bound to the symbol (or
+  any other destructuring form). Returns a notifier which receives the
+  return value of body. Any exception thrown in body will be caught
+  and supplied to the notifier."
   [bindings & body]
-  {:pre [(even? (count bindings))]}
-  (if (seq bindings)
-    `(lazy-notifier ~(second bindings)
-                    (fn [~(first bindings)]
-                      (attend ~(drop 2 bindings)
-                        ~@body)))
-    `(do ~@body)))
+  {:pre [(= 2 (count bindings))]}
+  `(derived-notifier ~(second bindings)
+                     (fn [~(first bindings)] ~@body)))
 
-(defmacro when-ready
-  "Like attend but will not execute body more than once."
+(defmacro lazy-on
+  "Like 'on', but body will not be executed until the value is needed,
+  and may be executed multiple times. More efficient than 'on'."
   [bindings & body]
-  {:pre [(even? (count bindings))]}
-  (if (seq bindings)
-    `(derived-notifier ~(second bindings)
-                       (fn [~(first bindings)]
-                         (when-ready ~(drop 2 bindings)
-                           ~@body)))
-    `(do ~@body)))
+  {:pre [(= 2 (count bindings))]}
+  `(lazy-notifier ~(second bindings)
+                  (fn [~(first bindings)] ~@body)))
 
-(defmacro do-when-ready
-  "Like when-ready, but does not return a value and will not execute
-  body more than once."
+(defmacro do-on
+  "Like 'on' but does not return a value."
   [bindings & body]
-  {:pre [(even? (count bindings))]}
-  (list 'do (if (seq bindings)
-              `(register ~(second bindings)
-                         (fn [~(first bindings)]
-                           (do-when-ready ~(drop 2 bindings)
-                                          ~@body)))
-              `(do ~@body))
-        nil))
+  {:pre [(= 2 (count bindings))]}
+  `(register ~(second bindings)
+             (fn [~(first bindings)] ~@body)))
 
 (defprotocol IFutureSeq
   (current [this])
@@ -183,13 +169,13 @@
   (FutureCons. a b))
 
 (defn map& [f fseq]
-  (attend [c fseq]
+  (lazy-on [c fseq]
     (when c
       (follow (f (current c))
               (map& f (later c))))))
 
 (defn take& [n fseq]
-  (attend [x fseq]
+  (lazy-on [x fseq]
     (when (and (pos? n) x)
       (follow (current x) (take& (dec n) (later x))))))
 
@@ -337,7 +323,7 @@
 "Elapsed time: 0.513 msecs"
 )
 
-;; "attend": occur with or as a result of; wait on (an important person)
+;; "lazy-on": occur with or as a result of; wait on (an important person)
 
 ;; Still TODO:
 ;; - Supply chunked seqs to notifiers
@@ -358,5 +344,5 @@
 
 ;; Local Variables:
 ;; mode: clojure
-;; eval: (define-clojure-indent (attend (quote defun)) (when-ready (quote defun)) (do-when-ready (quote defun)))
+;; eval: (define-clojure-indent (lazy-on (quote defun)) (when-ready (quote defun)) (do-when-ready (quote defun)))
 ;; End:
