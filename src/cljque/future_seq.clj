@@ -34,9 +34,9 @@
                (if x
                  (if (zero? n)
                    (supply out x)
-                   (register (later x) (partial thisfn (dec n))))
+                   (attend (later x) (partial thisfn (dec n))))
                  (supply out nil)))]
-    (register fseq (partial step (dec n)))
+    (attend fseq (partial step (dec n)))
     out))
 
 (defn filter& [f fseq]
@@ -46,19 +46,19 @@
                  (let [c (current x)]
                    (if (f c)
                      (supply out (follow c (filter& f (later x))))
-                     (register (later x) thisfn)))
+                     (attend (later x) thisfn)))
                  (supply out nil)))]
-    (register fseq step)
+    (attend fseq step)
     out))
 
 (defn reduce& [f init fseq]
   (let [out (notifier)
         step (fn thisfn [init x]
                (if x
-                 (register (later x)
+                 (attend (later x)
                            (partial thisfn (f init (current x))))
                  (supply out init)))]
-    (register fseq (partial step init))
+    (attend fseq (partial step init))
     out))
 
 (defn push!
@@ -88,11 +88,11 @@
   (let [{:keys [error-handler]
          :or {error-handler default-sink-error-handler}}
         options]
-    (register fseq
+    (attend fseq
               (fn thisfn [s]
                 (when s
                   (try (f (current s))
-                       (register (later s) thisfn)
+                       (attend (later s) thisfn)
                        (catch Throwable t
                          (error-handler s t))))))
     nil))
@@ -107,7 +107,7 @@
   [& notifiers]
   (let [out (notifier)]
     (doseq [n notifiers]
-      (register n #(supply out %)))
+      (attend n #(supply out %)))
     out))
 
 (defn future-call& [f]

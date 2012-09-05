@@ -1,7 +1,7 @@
 (ns cljque.inotify)
 
 (defprotocol INotify
-  (register [notifier f]
+  (attend [notifier f]
     "Register callback f on notifier. When notifier receives a value,
     it will execute (f value), possibly on another thread. Function f
     should neither block nor throw exceptions. If notifier already has
@@ -19,11 +19,11 @@
   reached before a value is available."
   ([inotify]
      (let [p (promise)]
-       (register inotify p)
+       (attend inotify p)
        (deref p)))
   ([inotify timeout-ms timeout-val]
      (let [p (promise)]
-       (register inotify p)
+       (attend inotify p)
        (deref p timeout-ms timeout-val))))
 
 ;; Normal `locking` breaks mutable fields; see CLJ-1023
@@ -36,7 +36,7 @@
 (deftype Notifier [^:unsynchronized-mutable v
                    ^:unsynchronized-mutable q]
   INotify
-  (register [this f]
+  (attend [this f]
     (when-not (unsafe-locking this
                 (when q
                   (set! q (conj q f))))
@@ -72,15 +72,15 @@
 (defn notifier
   "Returns a notifier object that can be set, once only, with
   supply. When supplied, invokes callback functions added with
-  register. Calling deref will block until a value is supplied, unless
+  attend. Calling deref will block until a value is supplied, unless
   the 3-argument form of deref is used. See also - realized?"
   []
   (Notifier. nil []))
 
 (deftype LazyNotifier [source f ^:unsynchronized-mutable v]
   INotify
-  (register [this g]
-    (register source (fn [x] (g (this x))))
+  (attend [this g]
+    (attend source (fn [x] (g (this x))))
     this)
   clojure.lang.IFn
   (invoke [this x]
@@ -111,7 +111,7 @@
   "Returns a notifier which will receive the result of calling f on
   the value of inotify. Any exception thrown by f will be caught and
   supplied to the notifier. The function f will not be called unless a
-  callback is registered, and f may be called multiple times."
+  callback is attended, and f may be called multiple times."
   [inotify f]
   (LazyNotifier. inotify f f))
 
@@ -122,7 +122,7 @@
   inotify has a value, and f will only be called once."
   [inotify f]
   (let [n (notifier)]
-    (register inotify
+    (attend inotify
               (fn [x] (supply n (try (f x) (catch Throwable t t)))))
     n))
 
@@ -149,5 +149,5 @@
   "Like 'on' but does not return a value."
   [bindings & body]
   {:pre [(= 2 (count bindings))]}
-  `(register ~(second bindings)
+  `(attend ~(second bindings)
              (fn [~(first bindings)] ~@body)))
