@@ -175,3 +175,32 @@
   (let [out (notifier)]
     (collect-all out [] notifiers)
     out))
+
+(defn on-any-map
+  "Takes a map from arbitrary keys to notifiers and returns a new
+  notifier. When any one of the notifiers in the map has a value,
+  supplies a map containing just that key and the value of its
+  notifier."
+  [notifier-map]
+  (let [out (notifier)]
+    (doseq [[k n] notifier-map]
+      (attend n (fn [value] (supply out {k value}))))
+    out))
+
+(defn- collect-all-map [out values notifiers]
+  (if (seq notifiers)
+    (let [[k n] (first notifiers)]
+      (attend n (fn [value]
+                  (collect-all-map
+                   out (assoc values k value) (rest notifiers)))))
+    (supply out values)))
+
+(defn on-all-map
+  "Takes a map from arbitrary keys to notifiers and returns a new
+  notifier. When all of the notifiers in the map have values, supplies
+  a map from the keys to the values of their notifiers."
+  [notifier-map]
+  (let [out (notifier)]
+    (collect-all-map out {} notifier-map)
+    out))
+
