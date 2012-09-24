@@ -26,35 +26,37 @@
        (attend inotify p)
        (deref p timeout-ms timeout-val))))
 
-;; Normal `locking` breaks mutable fields; see CLJ-1023
-(defmacro unsafe-locking [lock & body]
-  `(do (monitor-enter ~lock)
-       (let [result# (do ~@body)]
-         (monitor-exit ~lock)
-         result#)))
+;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
+;; See CLJ-1023.
+(defprotocol MutableVQ
+  (set-v [this value])
+  (set-q [this value]))
 
 (deftype Notifier [^:unsynchronized-mutable v
                    ^:unsynchronized-mutable q]
+  MutableVQ
+  (set-v [this value] (set! v value))
+  (set-q [this value] (set! q value))
   INotify
   (attend [this f]
-    (when-not (unsafe-locking this
+    (when-not (locking this
                 (when q
-                  (set! q (conj q f))))
+                  (set-q this (conj q f))))
       (f v))
     this)
   ISupply
   (supply [this x]
-    (doseq [w (unsafe-locking this
+    (doseq [w (locking this
                 (when q
-                  (set! v x)
+                  (set-v this x)
                   (let [qq q]
-                    (set! q nil)
+                    (set-q this nil)
                     qq)))]
       (w x))
     x)
   clojure.lang.IPending
   (isRealized [this]
-    (unsafe-locking this (not q)))
+    (locking this (not q)))
   clojure.lang.IDeref
   (deref [this]
     (if q
@@ -110,8 +112,8 @@
 (defn lazy-notifier
   "Returns a notifier which will receive the result of calling f on
   the value of inotify. Any exception thrown by f will be caught and
-  supplied to the notifier. The function f will not be called unless a
-  callback is attended, and f may be called multiple times."
+  supplied to the notifier. The function f will not be called until
+  its value is needed, and f may be called multiple times."
   [inotify f]
   (LazyNotifier. inotify f f))
 
@@ -123,7 +125,7 @@
   [inotify f]
   (let [n (notifier)]
     (attend inotify
-              (fn [x] (supply n (try (f x) (catch Throwable t t)))))
+            (fn [x] (supply n (try (f x) (catch Throwable t t)))))
     n))
 
 (defmacro on
