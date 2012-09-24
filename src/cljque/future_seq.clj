@@ -120,13 +120,14 @@
 
 (comment
   ;; Sample usage
-  (def a (notifier))
-  (def b (filter& even? a))
-  (def c (map& #(* 5 %) b))
-  (def d (take& 10 c))
-  (def e (reduce& + 0 d))
+  (do 
+   (def a (notifier))
+   (def b (filter& even? a))
+   (def c (map& #(* 5 %) b))
+   (def d (take& 10 c))
+   (def e (reduce& + 0 d)))
   (doseq& [x d] (println "d is" x))
-  (do-when-ready [x e] (println "e is" x))
+  (do-on [x e] (println "e is" x))
   
   ;; This must be an Agent, not an Atom or Ref:
   (def tick (agent a))
