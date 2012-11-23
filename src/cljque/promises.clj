@@ -118,21 +118,6 @@
         options]
     (Promise. (CountDownLatch. 1) default-executor nil [] nil)))
 
-(defmacro on-via
-  [executor bindings & body]
-  (let [[binding-form base-promise] bindings]
-    `(let [exe# ~executor
-           return# (promise :default-executor exe#)]
-       (attend ~base-promise
-               (fn [promise#]
-                 (try (let [~binding-form (deref promise#)]
-                        (when-not (realized? return#)
-                          (deliver return# (do ~@body))))
-                      (catch Throwable t#
-                        (fail return# t#))))
-               exe#)
-       return#)))
-
 (defmacro on
   "Bindings is a vector of [binding-form promise]. Creates a callback
   on promise which will execute body with binding-form bound to the
@@ -148,21 +133,14 @@
   The returned promise has the same default executor as the original
   promise."
   [bindings & body]
-  `(on-via (.-default_executor ~(second bindings))
-           ~bindings ~@body))
-
-(defn follow [source-promise target-promise]
-  (attend source-promise
-          (fn [p]
-            (try (deliver target-promise @p)
-                 (catch Throwable t
-                   (fail target-promise t))))))
-
-;; Which default-executor do we use here?
-(defn on-all
-  [bindings & body]
-  {:pre [(vector? bindings) (even? (count bindings))]}
-  (if (seq bindings)
-    `(on ~(vec (take 2 bindings))
-         (on-all ~(nthrest 2 bindings) ~@body))
-    (cons 'do body)))
+  (let [[binding-form base-promise] bindings]
+    `(let [return# (promise :default-executor
+                            (.-default_executor ~base-promise))]
+       (attend ~base-promise
+               (fn [promise#]
+                 (try (let [~binding-form (deref promise#)]
+                        (when-not (realized? return#)
+                          (deliver return# (do ~@body))))
+                      (catch Throwable t#
+                        (fail return# t#)))))
+       return#)))
