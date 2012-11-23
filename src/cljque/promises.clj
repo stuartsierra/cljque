@@ -5,19 +5,20 @@
 (defprotocol IDeliver
   (deliver [promise val]
     "Delivers the supplied value to the promise, releasing any pending
-  derefs. A subsequent call to deliver or abort on the promise will
+  derefs. A subsequent call to deliver or fail on the promise will
   have no effect. Returns the promise.")
-  (abort [promise ex]
+  (fail [promise exception]
     "Delivers the supplied exception to the promise, releasing any
   pending derefs by throwing the exception. A subsequent call to
-  deliver or abort on the promise will have no effect. Returns the
+  deliver or fail on the promise will have no effect. Returns the
   promise."))
 
 (defprotocol INotify
   (attend [promise f] [promise f executor]
     "Registers callback f on promise and returns the promise. When a
-    value is delivered to the promise, it will submit #(f promise) to
-    the executor."))
+  value is delivered to the promise, it will submit #(f promise) to
+  the executor. With no executor, (f promise) will be called on the
+  thread that delivered the value."))
 
 (comment
   ;; This doesn't work because "Mismatched return type: execute,
@@ -27,60 +28,93 @@
       (execute [_ ^Runnable command]
         (.run command)))))
 
-(defn promise []
-  (let [d (CountDownLatch. 1)
-        v (atom [d false])]
-    (reify
-      IDeliver
-      (deliver [this val]
-        (let [[val _ & q] (swap! v #(if (= d (first %))
-                                      (assoc % 0 val)
-                                      %))]
-          (when-not (= d val)
-            (.countDown d)
-            (doseq [[f ^Executor executor] q]
-              (if executor
-                (.execute executor #(f this))
-                (f this))))))
-      (abort [this ex]
-        (let [[val _ & q] (swap! v #(if (= d (first %))
-                                      (assoc % 0 val 1 true)
-                                      %))]
-          (when-not (= d val)
-            (.countDown d)
-            (doseq [[f ^Executor executor] q]
-              (if executor
-                (.execute executor #(f this))
-                (f this))))))
-      INotify
-      (attend
-        [this f]
-        (let [[val] (swap! v #(if (= d (first %)) (conj % [f]) %))]
-          (when-not (= d val)
-            (f this))
-          this))
-      (attend
-        [this f executor]
-        (let [[val] (swap! v #(if (= d (first %)) (conj % [f executor]) %))]
-          (when-not (= d val)
-            (.execute executor #(f this)))
-          this))
-      clojure.lang.IDeref
-      (deref [_]
-        (.await d)
-        (let [[val aborted?] @v]
-          (if aborted?
-            (throw val)
-            val)))
-      clojure.lang.IBlockingDeref
-      (deref
-        [_ timeout-ms timeout-val]
-        (if (.await d timeout-ms TimeUnit/MILLISECONDS)
-          (let [[val aborted?] @v]
-            (if aborted?
-              (throw val)
-              val))
-          timeout-val))
-      clojure.lang.IPending
-      (isRealized [this]
-        (zero? (.getCount d))))))
+;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
+;; See CLJ-1023.
+(defprotocol MutableVQE
+  (set-v [this value])
+  (set-q [this value])
+  (set-e [this value]))
+
+;; Do not create directly, use 'promise' function
+(deftype Promise [latch
+                  default-executor
+                  ^:unsynchronized-mutable v  ; value
+                  ^:unsynchronized-mutable q  ; queue
+                  ^:unsynchronized-mutable e] ; error
+  MutableVQE
+  (set-v [this value] (set! v value))
+  (set-q [this value] (set! q value))
+  (set-e [this value] (set! e value))
+  IDeliver
+  (deliver [this val]
+    (when-let [fs (locking this
+                    (when-let [fs q]
+                      (set-v this val)
+                      (set-q this nil)
+                      fs))]
+      (.countDown latch)
+      (doseq [[f executor] fs]
+        (if-let [exe (or executor default-executor)]
+          (.execute exe #(f this))
+          (f this)))))
+  (fail [this ex]
+    (when-let [fs (locking this
+                    (when-let [fs q]
+                      (set-e this ex)
+                      (set-q this nil)
+                      fs))]
+      (.countDown latch)
+      (doseq [[f executor] fs]
+        (if-let [exe (or executor default-executor)]
+          (.execute exe #(f this))
+          (f this)))))
+  INotify
+  (attend
+    [this f]
+    (when-not (locking this
+                (when q (set-q this (conj q [f]))))
+      (f this)))
+  (attend
+    [this f executor]
+    (when-not (locking this
+                (when q (set-q this (conj q [f executor]))))
+      (.execute executor #(f this))))
+  clojure.lang.IDeref
+  (deref [_]
+    (.await latch)
+    (if e (throw e) v))
+  clojure.lang.IBlockingDeref
+  (deref
+    [_ timeout-ms timeout-val]
+    (if (.await latch timeout-ms TimeUnit/MILLISECONDS)
+      (if e (throw e) v)
+      timeout-val))
+  clojure.lang.IPending
+  (isRealized [this]
+    (zero? (.getCount latch))))
+
+(defn promise
+  "Returns a promise object that can be set, once only, with 'deliver'
+  or 'fail'. Calls to deref/@ prior to delivery will block, unless the
+  variant of deref with timeout is used. All subsequent derefs will
+  return the same delivered value without blocking. If the promise is
+  failed, deref will throw the exception with which it failed.
+
+  Callback functions can be attached to the promise with 'attend'.
+  When the promise is delivered or failed, all callback functions will
+  be invoked, in undetermined order, with the promise as an argument.
+
+  Options are key-value pairs from:
+
+      :default-executor
+
+      The java.util.concurrent.Executor on which to run any callback
+      which did not specify an executor. Defaults to the send-off
+      agent thread pool. If nil, callbacks will execute on whatever
+      thread delivered to the promise."
+  [& options]
+  (let [{:keys [default-executor]
+         :or {default-executor clojure.lang.Agent/soloExecutor}}
+        options]
+    (Promise. (CountDownLatch. 1) default-executor nil [] nil)))
+
