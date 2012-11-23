@@ -118,3 +118,29 @@
         options]
     (Promise. (CountDownLatch. 1) default-executor nil [] nil)))
 
+(defmacro on
+  "Bindings is a vector of [binding-form promise]. Creates a callback
+  on promise which will execute body with binding-form bound to the
+  value of the promise.
+
+  Returns a new promise to which the return value of body will be
+  delivered. If body throws an exception, or if the original promise
+  failed, the returned promise fails with the same exception.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, body MAY not be executed at all.
+
+  The returned promise has the same default executor as the original
+  promise."
+  [bindings & body]
+  (let [[binding-form base-promise] bindings]
+    `(let [return# (promise :default-executor
+                            (.-default_executor ~base-promise))]
+       (attend ~base-promise
+               (fn [promise#]
+                 (try (let [~binding-form (deref promise#)]
+                        (when-not (realized? return#)
+                          (deliver return# (do ~@body))))
+                      (catch Throwable t#
+                        (fail return# t#)))))
+       return#)))
