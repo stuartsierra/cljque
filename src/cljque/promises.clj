@@ -23,10 +23,16 @@
   promise."))
 
 (defprotocol INotify
-  (attend [promise f] [promise f executor]
-    "Registers callback f on promise and returns the promise. When a
+  (-attend [promise f executor]))
+
+(defn attend
+  "Registers callback f on promise and returns the promise. When a
   value is delivered to the promise, it will submit #(f promise) to
-  the executor, or *executor* if none supplied."))
+  the executor, or *executor* if none supplied."
+  ([promise f]
+     (-attend promise f *executor*))
+  ([promise f executor]
+     (-attend promise f executor)))
 
 (comment
   ;; This doesn't work because "Mismatched return type: execute,
@@ -60,10 +66,8 @@
                       (set-q this nil)
                       fs))]
       (.countDown latch)
-      (doseq [[f executor] fs]
-        (if executor
-          (.execute executor #(f this))
-          (f this)))))
+      (doseq [f fs] (f)))
+    this)
   (fail [this ex]
     (when-let [fs (locking this
                     (when-let [fs q]
@@ -71,19 +75,14 @@
                       (set-q this nil)
                       fs))]
       (.countDown latch)
-      (doseq [[f executor] fs]
-        (if executor
-          (.execute executor #(f this))
-          (f this)))))
+      (doseq [f fs] (f)))
+    this)
   INotify
-  (attend
-    [this f]
-    (.attend this f *executor*))
-  (attend
-    [this f executor]
-    (when-not (locking this
-                (when q (set-q this (conj q [f executor]))))
-      (.execute executor #(f this))))
+  (-attend [this f executor]
+    (let [exe (fn [] (.execute executor #(f this)))]
+      (when-not (locking this
+                  (when q (set-q this (conj q exe))))
+        (exe))))
   clojure.lang.IDeref
   (deref [_]
     (.await latch)
