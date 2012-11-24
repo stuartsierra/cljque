@@ -1,36 +1,46 @@
 (ns cljque.promises
-  (:refer-clojure :exclude (promise deliver))
-  (:import (java.util.concurrent CountDownLatch Executor TimeUnit)))
+  (:refer-clojure :exclude (promise deliver future future-call))
+  (:import (java.util.concurrent CountDownLatch Executor TimeUnit
+                                 TimeoutException)))
 
-(def ^:dynamic *executor*
-  "java.util.concurrent.Executor to use for callbacks created with the
-  2-argument form of 'attend'. Applies at the time the callback is
-  created, not when the promise is delivered. Defaults to the agent
-  send-off thread pool. If bound to nil, no executor will be used and
-  the callback will be invoked on the same thread that delivered the
-  promise."
+(def ^:dynamic *callback-executor*
+  "java.util.concurrent.ExecutorService to use for callbacks created
+  with the 2-argument form of 'attend'. Applies at the time the
+  callback is created, not when the promise is delivered. Defaults to
+  the agent send-off thread pool. If bound to nil, no executor will be
+  used and the callback will be invoked on the same thread that
+  delivered the promise."
+  clojure.lang.Agent/soloExecutor)
+
+(def ^:dynamic *future-executor*
+  "java.util.concurrent.ExecutorService to use when creating futures.
+  Defaults to the agent send-off thread pool."
   clojure.lang.Agent/soloExecutor)
 
 (defprotocol IDeliver
   (deliver [promise val]
     "Delivers the supplied value to the promise, releasing any pending
   derefs. A subsequent call to deliver or fail on the promise will
-  have no effect. Returns the promise.")
+  have no effect. Returns nil if the promise has already been
+  delivered; otherwise returns the promise.")
   (fail [promise exception]
     "Delivers the supplied exception to the promise, releasing any
   pending derefs by throwing the exception. A subsequent call to
-  deliver or fail on the promise will have no effect. Returns the
+  deliver or fail on the promise will have no effect. Returns nil if
+  the promise has already been delivered; otherwise returns the
   promise."))
 
 (defprotocol INotify
-  (-attend [promise f executor]))
+  (-attend [promise f executor]
+    "Adds a callback to this promise which will execute (f promise) on
+  executor when it has a value. Returns the promise."))
 
 (defn attend
   "Registers callback f on promise and returns the promise. When a
   value is delivered to the promise, it will submit #(f promise) to
-  the executor, or *executor* if none supplied."
+  the executor, or *callback-executor* if none supplied."
   ([promise f]
-     (-attend promise f *executor*))
+     (-attend promise f *callback-executor*))
   ([promise f executor]
      (-attend promise f executor)))
 
@@ -66,8 +76,8 @@
                       (set-q this nil)
                       fs))]
       (.countDown latch)
-      (doseq [f fs] (f)))
-    this)
+      (doseq [f fs] (f))
+      this))
   (fail [this ex]
     (when-let [fs (locking this
                     (when-let [fs q]
@@ -75,14 +85,15 @@
                       (set-q this nil)
                       fs))]
       (.countDown latch)
-      (doseq [f fs] (f)))
-    this)
+      (doseq [f fs] (f))
+      this))
   INotify
   (-attend [this f executor]
     (let [exe (fn [] (.execute executor #(f this)))]
       (when-not (locking this
                   (when q (set-q this (conj q exe))))
-        (exe))))
+        (exe)))
+    this)
   clojure.lang.IDeref
   (deref [_]
     (.await latch)
@@ -135,3 +146,44 @@
                       (catch Throwable t#
                         (fail return# t#)))))
        return#)))
+
+(defn future-call
+  "Takes a function of no args and returns a promise. Invokes the
+  function on *future-executor* and delivers it to the returned
+  promise. If the function throws an exception, fails the promise with
+  that exception."
+  [f]
+  (let [return (promise)
+        task (fn [] (try (let [value (f)]
+                           (deliver return value)
+                           value)
+                         (catch Throwable t
+                           (fail return t))))
+        fut (.submit *future-executor* task)]
+    (reify 
+      clojure.lang.IDeref 
+      (deref [_] (.get fut))
+      clojure.lang.IBlockingDeref
+      (deref [_ timeout-ms timeout-val]
+        (try (.get fut timeout-ms TimeUnit/MILLISECONDS)
+             (catch TimeoutException e
+               timeout-val)))
+      clojure.lang.IPending
+      (isRealized [_] (.isDone fut))
+      java.util.concurrent.Future
+      (get [_] (.get fut))
+      (get [_ timeout unit] (.get fut timeout unit))
+      (isCancelled [_] (.isCancelled fut))
+      (isDone [_] (.isDone fut))
+      (cancel [_ interrupt?] (.cancel fut interrupt?))
+      INotify
+      (-attend [this f executor]
+        (-attend return f executor)
+        this))))
+
+(defmacro future
+  "Returns a promise. Executes body on *future-executor* and delivers
+  its result to the returned promise. If body throws an exception,
+  fails the promise with that exception."
+  [& body]
+  `(future-call (fn [] ~@body)))
