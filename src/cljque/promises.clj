@@ -44,14 +44,6 @@
   ([promise f executor]
      (-attend promise f executor)))
 
-(comment
-  ;; This doesn't work because "Mismatched return type: execute,
-  ;; expected: void, had: java.lang.Object"
-  (defn local-executor []
-    (reify Executor
-      (execute [_ ^Runnable command]
-        (.run command)))))
-
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
 (defprotocol MutableVQE
