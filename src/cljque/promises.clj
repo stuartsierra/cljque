@@ -81,7 +81,9 @@
       this))
   INotify
   (-attend [this f executor]
-    (let [exe (fn [] (.execute executor #(f this)))]
+    (let [exe (if executor
+                (fn [] (.execute executor #(f this)))
+                #(f this))]
       (when-not (locking this
                   (when q (set-q this (conj q exe))))
         (exe)))
