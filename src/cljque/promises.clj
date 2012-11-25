@@ -18,17 +18,8 @@
   clojure.lang.Agent/soloExecutor)
 
 (defprotocol IDeliver
-  (deliver [promise val]
-    "Delivers the supplied value to the promise, releasing any pending
-  derefs. A subsequent call to deliver or fail on the promise will
-  have no effect. Returns nil if the promise has already been
-  delivered; otherwise returns the promise.")
-  (fail [promise exception]
-    "Delivers the supplied exception to the promise, releasing any
-  pending derefs by throwing the exception. A subsequent call to
-  deliver or fail on the promise will have no effect. Returns nil if
-  the promise has already been delivered; otherwise returns the
-  promise."))
+  (-deliver [promise val])
+  (-fail [promise exception]))
 
 (defprotocol INotify
   (-attend [promise f executor]
@@ -36,13 +27,58 @@
   executor when it has a value. Returns the promise."))
 
 (defn attend
-  "Registers callback f on promise and returns the promise. When a
-  value is delivered to the promise, it will submit #(f promise) to
-  the executor, or *callback-executor* if none supplied."
+  "Registers callback f on promise. When a value is delivered to the
+  promise, it will submit #(f promise) to the executor, or
+  *callback-executor* if none supplied. Returns promise."
   ([promise f]
      (-attend promise f *callback-executor*))
   ([promise f executor]
      (-attend promise f executor)))
+
+(defn follow
+  "Registers callback f on promise. When a value is delivered to the
+  promise, it will submit #(f promise) to the executor, or
+  *callback-executor* if none supplied. Returns a new promise which
+  will be delivered with the return value of f, or failed if f throws
+  an exception."
+  ([promise f]
+     (follow promise f *callback-executor*))
+  ([promise f executor]
+     (let [return (promise)]
+       (attend promise
+               (fn [p]
+                 (try (deliver return (f p))
+                      (catch Throwable t
+                        (fail return t))))
+               executor)
+       return)))
+
+(defn fail
+  "Delivers the supplied exception to the promise, releasing any
+  pending derefs by throwing the exception. A subsequent call to
+  deliver or fail on the promise will have no effect. Returns nil if
+  the promise has already been delivered; otherwise returns the
+  promise."
+  [promise exception]
+  (-fail promise exception))
+
+(defn deliver
+  "Delivers the supplied value to the promise, releasing any pending
+  derefs. A subsequent call to deliver or fail on the promise will
+  have no effect. Returns nil if the promise has already been
+  delivered; otherwise returns the promise.
+
+  If val is a promise then this promise will wait until val is
+  delivered and become realized with the same value."
+  [promise val]
+  (if (and (not (realized? promise))
+           (extends? INotify (type val)))
+    (do (attend val (fn [p] (try (deliver promise @p)
+                                 (catch Throwable t
+                                   (fail promise t))))
+                nil)
+        promise)
+    (-deliver promise val)))
 
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
@@ -61,7 +97,7 @@
   (set-q [this value] (set! q value))
   (set-e [this value] (set! e value))
   IDeliver
-  (deliver [this val]
+  (-deliver [this val]
     (when-let [fs (locking this
                     (when-let [fs q]
                       (set-v this val)
@@ -70,7 +106,7 @@
       (.countDown latch)
       (doseq [f fs] (f))
       this))
-  (fail [this ex]
+  (-fail [this ex]
     (when-let [fs (locking this
                     (when-let [fs q]
                       (set-e this ex)
@@ -181,3 +217,12 @@
   fails the promise with that exception."
   [& body]
   `(future-call (fn [] ~@body)))
+
+(comment
+  ;; what about...
+  (on [value promise]
+      ;; successful callback code
+      (on-failure exception
+                  ;; error callback code
+                  ))
+  )
