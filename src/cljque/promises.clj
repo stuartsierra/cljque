@@ -37,19 +37,23 @@
 
 (defn follow
   "Registers callback f on promise. When a value is delivered to the
-  promise, it will submit #(f promise) to the executor, or
+  promise, it will submit #(f value) to the executor, or
   *callback-executor* if none supplied. Returns a new promise which
-  will be delivered with the return value of f, or failed if f throws
-  an exception."
+  will be delivered with the return value of f, or failed if the
+  original promise fails or f throws an exception.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, f may not be executed at all."
   ([promise f]
      (follow promise f *callback-executor*))
   ([promise f executor]
      (let [return (promise)]
        (attend promise
                (fn [p]
-                 (try (deliver return (f p))
-                      (catch Throwable t
-                        (fail return t))))
+                 (when-not (realized? return)
+                   (try (deliver return (f @p))
+                        (catch Throwable t
+                          (fail return t)))))
                executor)
        return)))
 
@@ -161,60 +165,71 @@
   failed, the returned promise fails with the same exception.
 
   If a value is delivered to the returned promise before the original
-  promise is delivered, body MAY not be executed at all.
-
-  The returned promise has the same default executor as the original
-  promise."
+  promise is delivered, body MAY not be executed at all."
   [bindings & body]
   (let [[binding-form base-promise] bindings]
-    `(let [return# (promise)]
-       (attend ~base-promise
-               (fn [promise#]
-                 (try (let [~binding-form (deref promise#)]
-                        (when-not (realized? return#)
-                          (deliver return# (do ~@body))))
-                      (catch Throwable t#
-                        (fail return# t#)))))
-       return#)))
+    `(follow ~base-promise (fn [~binding-form] ~@body))))
+
+(defmacro then
+  "Creates a callback on promise which will execute body with
+  binding-form bound to the value of the promise.
+
+  Returns a new promise to which the return value of body will be
+  delivered. If body throws an exception, or if the original promise
+  failed, the returned promise fails with the same exception.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, body MAY not be executed at all.
+
+  Promises can be chained using 'then' and the threading macro:
+
+      (-> a-promise
+          (then x ...)
+          (then y ...)
+          (then z ...))"
+  [promise binding-form & body]
+  `(follow ~base-promise (fn [~binding-form] ~@body)))
 
 (defn future-call
-  "Takes a function of no args and returns a promise. Invokes the
-  function on *future-executor* and delivers it to the returned
-  promise. If the function throws an exception, fails the promise with
-  that exception."
-  [f]
-  (let [return (promise)
-        task (fn [] (try (let [value (f)]
-                           (deliver return value)
-                           value)
-                         (catch Throwable t
-                           (fail return t))))
-        fut (.submit *future-executor* task)]
-    (reify 
-      clojure.lang.IDeref 
-      (deref [_] (.get fut))
-      clojure.lang.IBlockingDeref
-      (deref [_ timeout-ms timeout-val]
-        (try (.get fut timeout-ms TimeUnit/MILLISECONDS)
-             (catch TimeoutException e
-               timeout-val)))
-      clojure.lang.IPending
-      (isRealized [_] (.isDone fut))
-      java.util.concurrent.Future
-      (get [_] (.get fut))
-      (get [_ timeout unit] (.get fut timeout unit))
-      (isCancelled [_] (.isCancelled fut))
-      (isDone [_] (.isDone fut))
-      (cancel [_ interrupt?] (.cancel fut interrupt?))
-      INotify
-      (-attend [this f executor]
-        (-attend return f executor)
-        this))))
+  "Takes a function of no args and returns a future/promise object.
+  Invokes the function on *future-executor* and delivers it to the
+  returned promise. If the function throws an exception, fails the
+  promise with that exception. The future can be cancelled with
+  future-cancel."
+  ([f] (future-call f *future-executor*))
+  ([f executor]
+     (let [return (promise)
+           task (fn [] (try (let [value (f)]
+                              (deliver return value)
+                              value)
+                            (catch Throwable t
+                              (fail return t))))
+           fut (.submit executor task)]
+       (reify 
+         clojure.lang.IDeref 
+         (deref [_] (.get fut))
+         clojure.lang.IBlockingDeref
+         (deref [_ timeout-ms timeout-val]
+           (try (.get fut timeout-ms TimeUnit/MILLISECONDS)
+                (catch TimeoutException e
+                  timeout-val)))
+         clojure.lang.IPending
+         (isRealized [_] (.isDone fut))
+         java.util.concurrent.Future
+         (get [_] (.get fut))
+         (get [_ timeout unit] (.get fut timeout unit))
+         (isCancelled [_] (.isCancelled fut))
+         (isDone [_] (.isDone fut))
+         (cancel [_ interrupt?] (.cancel fut interrupt?))
+         INotify
+         (-attend [this f executor]
+           (-attend return f executor))))))
 
 (defmacro future
-  "Returns a promise. Executes body on *future-executor* and delivers
-  its result to the returned promise. If body throws an exception,
-  fails the promise with that exception."
+  "Returns a future/promise object. Executes body on *future-executor*
+  and delivers its result to the returned promise. If body throws an
+  exception, fails the promise with that exception. The future can be
+  cancelled with future-cancel."
   [& body]
   `(future-call (fn [] ~@body)))
 
