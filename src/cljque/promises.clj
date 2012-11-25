@@ -3,6 +3,8 @@
   (:import (java.util.concurrent CountDownLatch Executor TimeUnit
                                  TimeoutException)))
 
+(declare promise)
+
 (def ^:dynamic *callback-executor*
   "java.util.concurrent.ExecutorService to use for callbacks created
   with the 2-argument form of 'attend'. Applies at the time the
@@ -35,28 +37,6 @@
   ([promise f executor]
      (-attend promise f executor)))
 
-(defn follow
-  "Registers callback f on promise. When a value is delivered to the
-  promise, it will submit #(f value) to the executor, or
-  *callback-executor* if none supplied. Returns a new promise which
-  will be delivered with the return value of f, or failed if the
-  original promise fails or f throws an exception.
-
-  If a value is delivered to the returned promise before the original
-  promise is delivered, f may not be executed at all."
-  ([promise f]
-     (follow promise f *callback-executor*))
-  ([promise f executor]
-     (let [return (promise)]
-       (attend promise
-               (fn [p]
-                 (when-not (realized? return)
-                   (try (deliver return (f @p))
-                        (catch Throwable t
-                          (fail return t)))))
-               executor)
-       return)))
-
 (defn fail
   "Delivers the supplied exception to the promise, releasing any
   pending derefs by throwing the exception. A subsequent call to
@@ -83,6 +63,28 @@
                 nil)
         promise)
     (-deliver promise val)))
+
+(defn follow
+  "Registers callback f on source-promise. When a value is delivered
+  to the promise, it will submit #(f value) to the executor, or
+  *callback-executor* if none supplied. Returns a new promise which
+  will be delivered with the return value of f, or failed if the
+  original promise fails or f throws an exception.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, f may not be executed at all."
+  ([source-promise f]
+     (follow source-promise f *callback-executor*))
+  ([source-promise f executor]
+     (let [return (promise)]
+       (attend source-promise
+               (fn [p]
+                 (when-not (realized? return)
+                   (try (deliver return (f @p))
+                        (catch Throwable t
+                          (fail return t)))))
+               executor)
+       return)))
 
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
@@ -167,8 +169,8 @@
   If a value is delivered to the returned promise before the original
   promise is delivered, body MAY not be executed at all."
   [bindings & body]
-  (let [[binding-form base-promise] bindings]
-    `(follow ~base-promise (fn [~binding-form] ~@body))))
+  (let [[binding-form source-promise] bindings]
+    `(follow ~source-promise (fn [~binding-form] ~@body))))
 
 (defmacro then
   "Creates a callback on promise which will execute body with
@@ -187,8 +189,8 @@
           (then x ...)
           (then y ...)
           (then z ...))"
-  [promise binding-form & body]
-  `(follow ~base-promise (fn [~binding-form] ~@body)))
+  [source-promise binding-form & body]
+  `(follow ~source-promise (fn [~binding-form] ~@body)))
 
 (defn future-call
   "Takes a function of no args and returns a future/promise object.
