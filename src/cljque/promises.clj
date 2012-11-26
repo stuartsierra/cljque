@@ -209,14 +209,12 @@
            fut (.submit executor task)]
        (reify 
          clojure.lang.IDeref 
-         (deref [_] (.get fut))
+         (deref [_] (deref return))
          clojure.lang.IBlockingDeref
          (deref [_ timeout-ms timeout-val]
-           (try (.get fut timeout-ms TimeUnit/MILLISECONDS)
-                (catch TimeoutException e
-                  timeout-val)))
+           (deref return timeout-ms timeout-val))
          clojure.lang.IPending
-         (isRealized [_] (.isDone fut))
+         (isRealized [_] (realized? return))
          java.util.concurrent.Future
          (get [_] (.get fut))
          (get [_ timeout unit] (.get fut timeout unit))
@@ -224,7 +222,7 @@
          (isDone [_] (.isDone fut))
          (cancel [_ interrupt?] (.cancel fut interrupt?))
          INotify
-         (-attend [this f executor]
+         (-attend [_ f executor]
            (-attend return f executor))))))
 
 (defmacro future
