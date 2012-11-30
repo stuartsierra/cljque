@@ -1,7 +1,7 @@
 (ns cljque.promises
   (:refer-clojure :exclude (promise deliver future future-call))
   (:import (java.util.concurrent CountDownLatch Executor TimeUnit
-                                 TimeoutException)))
+                                 TimeoutException CancellationException)))
 
 (declare promise)
 
@@ -27,6 +27,10 @@
   (-attend [promise f executor]
     "Adds a callback to this promise which will execute (f promise) on
   executor when it has a value. Returns the promise."))
+
+(defprotocol IFail
+  (-failed? [promise]
+    "Returns true if this promise has been failed."))
 
 (defn attend
   "Registers callback f on promise. When a value is delivered to the
@@ -125,6 +129,8 @@
                executor)
        return)))
 
+(defn failed? [p] (-failed? p))
+
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
 (defprotocol MutableVQE
@@ -169,6 +175,8 @@
                   (when q (set-q this (conj q exe))))
         (exe)))
     this)
+  IFail
+  (-failed? [_] (boolean e))
   clojure.lang.IDeref
   (deref [_]
     (.await latch)
@@ -259,10 +267,16 @@
          (get [_ timeout unit] (.get fut timeout unit))
          (isCancelled [_] (.isCancelled fut))
          (isDone [_] (.isDone fut))
-         (cancel [_ interrupt?] (.cancel fut interrupt?))
+         (cancel [_ interrupt?]
+           (let [b (.cancel fut interrupt?)]
+             (when b (fail return (CancellationException.)))
+             b))
          INotify
          (-attend [_ f executor]
-           (-attend return f executor))))))
+           (-attend return f executor))
+         IFail
+         (-failed? [_]
+           (failed? return))))))
 
 (defmacro future
   "Returns a future/promise object. Executes body on *future-executor*
