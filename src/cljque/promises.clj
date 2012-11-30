@@ -285,3 +285,53 @@
   cancelled with future-cancel."
   [& body]
   `(future-call (fn [] ~@body)))
+
+(defn any
+  "Returns a promise which is delivered/failed with the value of the
+  first of the promises to be delivered/failed."
+  [& promises]
+  (let [return (promise)]
+    (doseq [pr promises]
+      (attend pr (fn [p]
+                   (try (deliver return @p)
+                        (catch Throwable t
+                          (fail return t))))))
+    return))
+
+(defn all
+  "Returns a promise which is delivered with a collection of values
+  from all promises after they are all delivered. Fails if any of the
+  promises fails."
+  [& promises]
+  (let [vals (atom (vec promises))
+        counter (atom 0)
+        total (count promises)
+        return (promise)]
+    (dorun
+     (map-indexed
+      (fn [i pr]
+        (attend pr (fn [p]
+                     (try (swap! vals assoc i @p)
+                          (when (= total (swap! counter inc))
+                            (deliver return @vals))
+                          (catch Throwable t
+                            (fail return t))))))
+      promises))
+    return))
+
+(defn all-realized
+  "Returns a promise which is delivered with a collection of the
+  promises after they are all realized, regardless of whether they
+  were delivered or failed."
+  [& promises]
+  (let [counter (atom 0)
+        total (count promises)
+        return (promise)]
+    (dorun
+     (map-indexed
+      (fn [i pr]
+        (attend pr (fn [p]
+                     (when (= total (swap! counter inc))
+                       (deliver return promises)))))
+      promises))
+    return))
