@@ -86,6 +86,45 @@
                executor)
        return)))
 
+(defn- add-suppressed
+  "If this JDK supports it, add the suppressed exception onto the
+  Throwable. Always returns the Throwable."
+  [throwable suppressed]
+  (when-not (identical? throwable suppressed)
+    (when-let [addSuppressed (try (.getMethod (.getClass throwable)
+                                              "addSuppressed"
+                                              (object-array [Throwable]))
+                                  (catch NoSuchMethodException _ nil))]
+      (.invoke addSuppressed throwable (object-array [suppressed]))))
+  throwable)
+
+(defn follow-fail
+  "Registers a failure callback f on source-promise. When the promise
+  fails, it will submit #(f exception) to the executor, or
+  *callback-executor* if none supplied. Returns a new promise which
+  will be delivered with the return value of f, or failed if f throws
+  an exception.
+
+  If the source-promise does not fail, the returned promise will be
+  delivered with its value.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, f may not be executed at all."
+  ([source-promise f]
+     (follow-fail source-promise f *callback-executor*))
+  ([source-promise f executor]
+     (let [return (promise)]
+       (attend source-promise
+               (fn [p]
+                 (when-not (realized? return)
+                   (if-let [ex (try @p nil (catch Throwable t t))]
+                     (try (deliver return (f ex))
+                       (catch Throwable t
+                         (fail return (add-suppressed t ex))))
+                     (deliver return @p))))
+               executor)
+       return)))
+
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
 (defprotocol MutableVQE
@@ -157,21 +196,6 @@
   []
   (Promise. (CountDownLatch. 1) nil [] nil))
 
-(defmacro on
-  "Bindings is a vector of [binding-form promise]. Creates a callback
-  on promise which will execute body with binding-form bound to the
-  value of the promise.
-
-  Returns a new promise to which the return value of body will be
-  delivered. If body throws an exception, or if the original promise
-  failed, the returned promise fails with the same exception.
-
-  If a value is delivered to the returned promise before the original
-  promise is delivered, body MAY not be executed at all."
-  [bindings & body]
-  (let [[binding-form source-promise] bindings]
-    `(follow ~source-promise (fn [~binding-form] ~@body))))
-
 (defmacro then
   "Creates a callback on promise which will execute body with
   binding-form bound to the value of the promise.
@@ -188,9 +212,24 @@
       (-> a-promise
           (then x ...)
           (then y ...)
-          (then z ...))"
+          (then z ...)
+          (rescue err ...))"
   [source-promise binding-form & body]
   `(follow ~source-promise (fn [~binding-form] ~@body)))
+
+(defmacro recover
+  "Creates a failure callback on promise. If the promise fails, it
+  will execute body with binding-form bound to the exception.
+
+  Returns a new promise which will be delivered with the value of the
+  original promise (if it does not fail) or the return value of
+  body (if it does). If body throws an exception, the returned promise
+  fails with the same exception.
+
+  If a value is delivered to the returned promise before the original
+  promise is delivered, body MAY not be executed at all."
+  [source-promise binding-form & body]
+  `(follow-fail ~source-promise (fn [~binding-form] ~@body)))
 
 (defn future-call
   "Takes a function of no args and returns a future/promise object.
@@ -232,12 +271,3 @@
   cancelled with future-cancel."
   [& body]
   `(future-call (fn [] ~@body)))
-
-(comment
-  ;; what about...
-  (on [value promise]
-      ;; successful callback code
-      (on-failure exception
-                  ;; error callback code
-                  ))
-  )

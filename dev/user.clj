@@ -7,21 +7,16 @@
 (defn thread []
   (.. Thread currentThread getName))
 
-(comment
-  (def p1 (promise))
+(def p1 (promise))
 
-  (def p2 (on [v p1] (prn :on (thread) :p1 v) (inc v)))
 
-  (def p3 (on [v p2] (prn :on (thread) :p2 v) (inc v)))
+(def p2
+  (-> p1
+      (then v (prn :on (thread) :v v) (+ v 1))
+      (then v (prn :on (thread) :v v) (+ v 2))
+      ;;(then v (throw (Exception. "BOOM!")))
+      (then v (prn :on (thread) :v v) (+ v 4))
+      (recover ex (prn :on (thread) :error ex) -1)
+      (then v (prn :on (thread) :v v) (* v 10))))
 
-  (def p4 (on [v p3] (prn :on (thread) :p3 v) (inc v))))
 
-(def start (promise))
-
-(def p2 (on [_ start]
-            (Thread/sleep 1010)
-            (future (Thread/sleep 505))))
-
-(defn g1 []
-  (time (do (deliver start 1)
-            @p2)))
