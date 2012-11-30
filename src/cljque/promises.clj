@@ -335,3 +335,23 @@
                        (deliver return promises)))))
       promises))
     return))
+
+;; Replacing one print-method in core to safely print failed
+;; promises:
+
+(in-ns 'clojure.core)
+
+(defmethod print-method clojure.lang.IDeref [o ^Writer w]
+  (print-sequential (format "#<%s@%x%s: "
+                            (.getSimpleName (class o))
+                            (System/identityHashCode o)
+                            (if (or (and (instance? clojure.lang.Agent o)
+                                         (agent-error o))
+                                    (and (instance? cljque.promises.Promise o)
+                                         (cljque.promises/failed? o)))
+                              " FAILED"
+                              ""))
+                    pr-on, "", ">", (list (if (and (instance? clojure.lang.IPending o) (not (.isRealized o)))
+                                            :pending
+                                            (try @o (catch Throwable t t)))), w))
+
