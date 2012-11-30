@@ -269,7 +269,9 @@
          (isDone [_] (.isDone fut))
          (cancel [_ interrupt?]
            (let [b (.cancel fut interrupt?)]
-             (when b (fail return (CancellationException.)))
+             (when b (fail return (try (.get fut)
+                                       (CancellationException.)
+                                       (catch Throwable t t))))
              b))
          INotify
          (-attend [_ f executor]
