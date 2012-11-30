@@ -213,7 +213,7 @@
           (then x ...)
           (then y ...)
           (then z ...)
-          (rescue err ...))"
+          (recover err ...))"
   [source-promise binding-form & body]
   `(follow ~source-promise (fn [~binding-form] ~@body)))
 
