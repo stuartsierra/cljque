@@ -18,7 +18,7 @@ other, from this software.
 Overview
 ========================================
 
-Goals: See [Asynchronous Events](http://dev.clojure.org/display/design/Asynchronous+Events) on the Clojure wiki
+Goals: See [Promises](http://dev.clojure.org/display/design/Promises) and [Asynchronous Events](http://dev.clojure.org/display/design/Asynchronous+Events) on the Clojure wiki
 
 
 Inspirations / References
