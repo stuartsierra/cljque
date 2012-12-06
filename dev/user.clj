@@ -1,15 +1,15 @@
 (ns user
-  (:refer-clojure :exclude (promise deliver future future-call))
-  (:use clojure.repl
-        clojure.tools.namespace.repl
-        cljque.promises
-        cljque.reducers)
-  (:require [clojure.core.reducers :as r]))
+  (:require [clojure.repl :refer :all]
+            [clojure.tools.namespace.repl :refer (refresh refresh-all)]
+            [clojure.core.reducers :as r]
+            [cljque.promises :as p
+             :refer (then recover any all all-realized)]
+            [cljque.future-seq :refer :all]))
 
 (defn thread []
   (.. Thread currentThread getName))
 
-(def p1 (promise))
+(def p1 (p/promise))
 
 
 (def p2
@@ -22,11 +22,11 @@
       (then v (prn :on (thread) :v v) (* v 10))))
 
 
-(def a (promise))
-(def b (promise))
-(def c (promise))
-(def d (promise))
-(def e (promise))
+(def a (p/promise))
+(def b (p/promise))
+(def c (p/promise))
+(def d (p/promise))
+(def e (p/promise))
 
 (def all-3 (all a b c))
 
