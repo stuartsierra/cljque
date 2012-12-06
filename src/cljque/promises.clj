@@ -68,7 +68,7 @@
         promise)
     (-deliver promise val)))
 
-(defn follow
+(defn then-call
   "Registers callback f on source-promise. When a value is delivered
   to the promise, it will submit #(f value) to the executor, or
   *callback-executor* if none supplied. Returns a new promise which
@@ -78,7 +78,7 @@
   If a value is delivered to the returned promise before the original
   promise is delivered, f may not be executed at all."
   ([source-promise f]
-     (follow source-promise f *callback-executor*))
+     (then-call source-promise f *callback-executor*))
   ([source-promise f executor]
      (let [return (promise)]
        (attend source-promise
@@ -102,7 +102,7 @@
       (.invoke addSuppressed throwable (object-array [suppressed]))))
   throwable)
 
-(defn follow-fail
+(defn recover-call
   "Registers a failure callback f on source-promise. When the promise
   fails, it will submit #(f exception) to the executor, or
   *callback-executor* if none supplied. Returns a new promise which
@@ -115,7 +115,7 @@
   If a value is delivered to the returned promise before the original
   promise is delivered, f may not be executed at all."
   ([source-promise f]
-     (follow-fail source-promise f *callback-executor*))
+     (recover-call source-promise f *callback-executor*))
   ([source-promise f executor]
      (let [return (promise)]
        (attend source-promise
@@ -223,7 +223,7 @@
           (then z ...)
           (recover err ...))"
   [source-promise binding-form & body]
-  `(follow ~source-promise (fn [~binding-form] ~@body)))
+  `(then-call ~source-promise (fn [~binding-form] ~@body)))
 
 (defmacro recover
   "Creates a failure callback on promise. If the promise fails, it
@@ -237,7 +237,7 @@
   If a value is delivered to the returned promise before the original
   promise is delivered, body MAY not be executed at all."
   [source-promise binding-form & body]
-  `(follow-fail ~source-promise (fn [~binding-form] ~@body)))
+  `(recover-call ~source-promise (fn [~binding-form] ~@body)))
 
 (defn future-call
   "Takes a function of no args and returns a future/promise object.
