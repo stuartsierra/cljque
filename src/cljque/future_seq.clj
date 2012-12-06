@@ -1,4 +1,4 @@
-(ns cljque.reducers
+(ns cljque.future-seq
   (:refer-clojure :exclude (promise deliver))
   (:require clojure.core.protocols
             [cljque.promises
