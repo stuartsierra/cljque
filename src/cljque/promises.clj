@@ -1,6 +1,6 @@
 (ns cljque.promises
   (:refer-clojure :exclude (promise deliver future future-call))
-  (:import (java.util.concurrent CountDownLatch Executor TimeUnit
+  (:import (java.util.concurrent CountDownLatch Executor Future TimeUnit
                                  TimeoutException CancellationException)))
 
 (declare promise)
@@ -189,6 +189,20 @@
       timeout-val))
   clojure.lang.IPending
   (isRealized [this]
+    (zero? (.getCount latch)))
+  Future
+  (cancel [this interrupt?]
+    (boolean (fail this (CancellationException.))))
+  (get [this]
+    (.await latch)
+    (if e (throw e) v))
+  (get [this timeout timeunit]
+    (if (.await latch timeout timeunit)
+      (if e (throw e) v)
+      (throw (TimeoutException.))))
+  (isCancelled [this]
+    (instance? CancellationException e))
+  (isDone [this]
     (zero? (.getCount latch))))
 
 (defn promise
@@ -262,7 +276,7 @@
            (deref return timeout-ms timeout-val))
          clojure.lang.IPending
          (isRealized [_] (realized? return))
-         java.util.concurrent.Future
+         Future
          (get [_] (.get fut))
          (get [_ timeout unit] (.get fut timeout unit))
          (isCancelled [_] (.isCancelled fut))
