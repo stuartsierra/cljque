@@ -21,6 +21,32 @@
       (recover ex (prn :on (thread) :error ex) -1)
       (then v (prn :on (thread) :v v) (* v 10))))
 
+;; This works fine for small values of n (< 1000) but will throw
+;; StackOverflow for large n.
+(defn nested-deliver [n]
+  (let [original-promise (p/promise)]
+    (loop [p original-promise
+           i n]
+      (if (zero? i)
+        (do (p/deliver p 42)
+            original-promise)
+        (let [p' (p/promise)]
+          (p/deliver p p')
+          (recur p' (dec i)))))))
+
+;; This works even for very large n
+(defn nested-raw-deliver [n]
+  (let [original-promise (p/promise)]
+    (loop [p original-promise
+           i n]
+      (if (zero? i)
+        (do (p/-deliver p 42)
+            original-promise)
+        (let [p' (p/promise)]
+          (p/-deliver p p')
+          (recur p' (dec i)))))))
+
+;; (-> (nested-raw-deliver 100000) (then v (prn v)))
 
 (def a (p/promise))
 (def b (p/promise))
