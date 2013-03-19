@@ -269,8 +269,8 @@
                             (catch Throwable t
                               (fail return t))))
            fut (.submit executor task)]
-       (reify 
-         clojure.lang.IDeref 
+       (reify
+         clojure.lang.IDeref
          (deref [_] (deref return))
          clojure.lang.IBlockingDeref
          (deref [_ timeout-ms timeout-val]
