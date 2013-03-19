@@ -142,7 +142,7 @@
 (deftype Promise [latch
                   ^:unsynchronized-mutable v  ; value
                   ^:unsynchronized-mutable q  ; queue
-                  ^:unsynchronized-mutable e] ; error
+                  ^:volatile-mutable e] ; error
   MutableVQE
   (set-v [this value] (set! v value))
   (set-q [this value] (set! q value))
@@ -176,6 +176,7 @@
         (exe)))
     this)
   IFail
+  ;; e has to be volatile because of unprotected read here
   (-failed? [_] (boolean e))
   clojure.lang.IDeref
   (deref [_]
