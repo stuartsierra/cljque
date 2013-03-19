@@ -35,11 +35,17 @@
 (defn attend
   "Registers callback f on promise. When a value is delivered to the
   promise, it will submit #(f promise) to the executor, or
-  *callback-executor* if none supplied. Returns promise."
+  *callback-executor* if none supplied. Returns promise.
+
+  If this promise is already realized with another promise as its
+  value, it will recursively attend on that promise instead."
   ([promise f]
-     (-attend promise f *callback-executor*))
+     (attend promise f *callback-executor*))
   ([promise f executor]
-     (-attend promise f executor)))
+     (if (and (realized? promise)
+              (extends? INotify (type @promise)))
+       (recur @promise f executor)
+       (-attend promise f executor))))
 
 (defn fail
   "Delivers the supplied exception to the promise, releasing any
