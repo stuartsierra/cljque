@@ -135,7 +135,10 @@
                executor)
        return)))
 
-(defn failed? [p] (-failed? p))
+(defn failed? [p]
+  "Returns true if the promise is in a failed state: dereferencing the
+  promise will throw the exception."
+  (-failed? p))
 
 ;; Try-finally in 'locking' breaks mutable fields, this is a workaround.
 ;; See CLJ-1023.
