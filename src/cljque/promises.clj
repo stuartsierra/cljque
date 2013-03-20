@@ -265,10 +265,10 @@
 
 (defn future-call
   "Takes a function of no args and returns a future/promise object.
-  Invokes the function on *future-executor* and delivers it to the
-  returned promise. If the function throws an exception, fails the
-  promise with that exception. The future can be cancelled with
-  future-cancel."
+  Invokes the function on executor (default *future-executor*) and
+  delivers it to the returned promise. If the function throws an
+  exception, fails the promise with that exception. The future can be
+  cancelled with future-cancel."
   ([f] (future-call f *future-executor*))
   ([f executor]
      (let [return (promise)
