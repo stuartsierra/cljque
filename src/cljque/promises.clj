@@ -353,6 +353,22 @@
       promises))
     return))
 
+(comment
+  ;; Extending to Google Guava ListenableFuture
+  (extend-protocol INotify
+    com.google.common.util.concurrent.AbstractFuture
+    (-attend [future f executor]
+      (.addListener future #(f future) executor))
+    ;; what about deref?
+    )
+
+  (extend-protocol IDeliver
+    com.google.common.util.concurrent.SettableFuture
+    (-deliver [future val]
+      (.set this val))
+    (-fail [future exception]
+      (.setException this exception))))
+
 ;; Replacing one print-method in core to safely print failed
 ;; promises:
 
