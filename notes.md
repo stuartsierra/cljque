@@ -7,3 +7,8 @@
 *** Asynchronous
 ** Listen for incoming connection requests
 *** Invoke function with new communications channel
+
+"Lazy future" or "delay" - does not begin computing its value until you ask for it, either by dereferencing or attending.
+
+"Timeout" - wraps another promise with a timeout. Requires a scheduler!
+
